@@ -1,0 +1,55 @@
+{
+  "name": "mcp-agent-lib",
+  "version": "1.0.0",
+  "description": "AI Agent Host를 위한 인간친화적 MCP (Model Context Protocol) 클라이언트 라이브러리",
+  "main": "index.js",
+  "type": "module",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "scripts": {
+    "example": "node examples/simple_example.js",
+    "example:complete": "node examples/complete_mcp_example.js",
+    "demo": "npm run example",
+    "demo:all": "npm run example:complete"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ai-agent",
+    "llm",
+    "agent-host",
+    "automation",
+    "protocol",
+    "client",
+    "library"
+  ],
+  "author": "AI Agent Library Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ai-agent-library/mcp-agent-lib.git"
+  },
+  "files": [
+    "index.js",
+    "src/",
+    "examples/",
+    "README.md",
+    "GETTING_STARTED.md"
+  ],
+  "exports": {
+    ".": {
+      "import": "./index.js",
+      "default": "./index.js"
+    },
+    "./src/*": "./src/*",
+    "./examples/*": "./examples/*"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.18.1",
+    "axios": "^1.6.0"
+  },
+  "devDependencies": {},
+  "peerDependencies": {},
+  "optionalDependencies": {}
+}

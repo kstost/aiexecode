@@ -1,0 +1,30 @@
+# Include only built files and server
+# Exclude all source files and development configs
+
+# Source files (exclude)
+app/
+components/
+lib/
+types/
+public/
+
+# Build artifacts (exclude)
+.next/
+node_modules/
+
+# Config files (exclude)
+.env*
+.gitignore
+eslint.config.mjs
+next-env.d.ts
+next.config.ts
+postcss.config.mjs
+tsconfig.json
+package.json
+package-lock.json
+manual.txt
+start.sh
+
+# Include these files (by NOT excluding them)
+# - web_server.js
+# - out/ (built static files)
