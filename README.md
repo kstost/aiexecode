@@ -12,7 +12,7 @@
 
 ---
 
-## What is this?
+## What is this
 
 **AIEXEcode** is a CLI tool where you simply describe what you want in natural language, and AI handles the coding for you.
 
