@@ -1,8 +1,25 @@
 import { promises as fs } from 'fs';
-import { dirname, resolve } from 'path';
+import { dirname, resolve, join } from 'path';
 import * as diff from 'diff';
-import { assertFileIntegrity, trackFileRead } from '../system/file_integrity.js';
-import { DEBUG_LOG_FILE } from '../util/config.js';
+import { assertFileIntegrity, trackFileRead, saveFileSnapshot } from '../system/file_integrity.js';
+import { DEBUG_LOG_DIR } from '../util/config.js';
+
+// Debug logging configuration
+const ENABLE_DEBUG_LOG = true;
+const LOG_FILE = join(DEBUG_LOG_DIR, 'code_editor.log');
+
+// Debug logging helper
+async function debugLog(message) {
+    if (!ENABLE_DEBUG_LOG) return;
+    try {
+        // 디렉토리가 없으면 생성
+        await fs.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => {});
+        const timestamp = new Date().toISOString();
+        await fs.appendFile(LOG_FILE, `[${timestamp}] ${message}\n`).catch(() => {});
+    } catch (err) {
+        // Ignore logging errors
+    }
+}
 
 // 이 파일은 파일을 만들고 수정할 때 필요한 기본 동작들을 제공합니다.
 // Orchestrator가 제안한 변경 사항을 실제 파일 시스템에 반영할 때 이 도구들을 호출합니다.
@@ -20,26 +37,47 @@ import { DEBUG_LOG_FILE } from '../util/config.js';
  * @returns {Promise<Object>} 결과 객체
  */
 export async function write_file({ file_path, content }) {
-    const debugLog = [];
+    debugLog('========== write_file START ==========');
+    debugLog(`Input parameters:`);
+    debugLog(`  file_path: "${file_path}"`);
+    debugLog(`  - file_path type: ${typeof file_path}`);
+    debugLog(`  - file_path length: ${file_path?.length || 0}`);
+    debugLog(`  - file_path starts with '/': ${file_path?.startsWith('/') || false}`);
+    debugLog(`  - file_path starts with './': ${file_path?.startsWith('./') || false}`);
+    debugLog(`  - file_path starts with '../': ${file_path?.startsWith('../') || false}`);
+    debugLog(`  content length: ${content?.length || 0} bytes`);
+    debugLog(`  content first 100 chars: ${JSON.stringify(content?.substring(0, 100) || '')}`);
+    debugLog(`  - Current Working Directory: ${process.cwd()}`);
+
+    const internalDebugLog = [];
     const timestamp = new Date().toISOString();
 
     try {
         // 경로를 절대경로로 정규화
         const absolutePath = resolve(file_path);
-        debugLog.push(`[${timestamp}] write_file called: ${absolutePath}`);
+        internalDebugLog.push(`[${timestamp}] write_file called: ${absolutePath}`);
+        debugLog(`Path Resolution:`);
+        debugLog(`  - Input path: "${file_path}"`);
+        debugLog(`  - Resolved absolute path: "${absolutePath}"`);
+        debugLog(`  - Path changed: ${file_path !== absolutePath}`);
+        debugLog(`  - Absolute path starts with '/': ${absolutePath.startsWith('/')}`);
+        debugLog(`  - Absolute path length: ${absolutePath.length}`);
 
         // 디렉토리 경로 추출
         const dir = dirname(absolutePath);
-        debugLog.push(`[${timestamp}] Directory: ${dir}`);
+        internalDebugLog.push(`[${timestamp}] Directory: ${dir}`);
+        debugLog(`Directory: "${dir}"`);
 
         // 디렉토리가 존재하지 않으면 생성
         try {
             await fs.access(dir);
-            debugLog.push(`[${timestamp}] Directory exists`);
+            internalDebugLog.push(`[${timestamp}] Directory exists`);
+            debugLog(`Directory exists`);
         } catch (error) {
             if (error.code === 'ENOENT') {
                 await fs.mkdir(dir, { recursive: true });
-                debugLog.push(`[${timestamp}] Directory created`);
+                internalDebugLog.push(`[${timestamp}] Directory created`);
+                debugLog(`Directory created`);
             } else {
                 throw error;
             }
@@ -48,56 +86,84 @@ export async function write_file({ file_path, content }) {
         // 기존 파일 확인
         let originalContent = '';
         let fileExists = false;
+        debugLog(`Checking if file exists...`);
         try {
             originalContent = await fs.readFile(absolutePath, 'utf8');
             fileExists = true;
-            debugLog.push(`[${timestamp}] File EXISTS - size: ${originalContent.length} bytes`);
+            internalDebugLog.push(`[${timestamp}] File EXISTS - size: ${originalContent.length} bytes`);
+            debugLog(`File EXISTS - size: ${originalContent.length} bytes`);
+            debugLog(`Original content first 100 chars: ${JSON.stringify(originalContent.substring(0, 100))}`);
         } catch (error) {
             if (error.code !== 'ENOENT') {
                 throw error;
             }
-            debugLog.push(`[${timestamp}] File DOES NOT EXIST`);
+            internalDebugLog.push(`[${timestamp}] File DOES NOT EXIST`);
+            debugLog(`File DOES NOT EXIST - will create new file`);
         }
 
         // 기존 파일이 있는 경우 무결성 검증 (절대경로 사용)
         if (fileExists) {
-            debugLog.push(`[${timestamp}] Calling assertFileIntegrity`);
+            internalDebugLog.push(`[${timestamp}] Calling assertFileIntegrity`);
+            debugLog(`Calling assertFileIntegrity...`);
             try {
                 await assertFileIntegrity(absolutePath);
-                debugLog.push(`[${timestamp}] assertFileIntegrity passed`);
+                internalDebugLog.push(`[${timestamp}] assertFileIntegrity passed`);
+                debugLog(`assertFileIntegrity passed`);
             } catch (integrityError) {
-                debugLog.push(`[${timestamp}] assertFileIntegrity FAILED: ${integrityError.message}`);
-                await fs.appendFile(DEBUG_LOG_FILE, debugLog.join('\n') + '\n');
+                internalDebugLog.push(`[${timestamp}] assertFileIntegrity FAILED: ${integrityError.message}`);
+                debugLog(`ERROR: assertFileIntegrity FAILED: ${integrityError.message}`);
+                await fs.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => {});
+                await fs.appendFile(LOG_FILE, internalDebugLog.join('\n') + '\n');
                 throw integrityError;
             }
         }
 
         // 파일 쓰기 (절대경로 사용)
-        debugLog.push(`[${timestamp}] Writing file - content size: ${content.length} bytes`);
+        internalDebugLog.push(`[${timestamp}] Writing file - content size: ${content.length} bytes`);
+        debugLog(`Writing file - content size: ${content.length} bytes`);
         await fs.writeFile(absolutePath, content, 'utf8');
-        debugLog.push(`[${timestamp}] File written successfully`);
+        internalDebugLog.push(`[${timestamp}] File written successfully`);
+        debugLog(`File written successfully`);
 
         // 파일 수정 후 해시 업데이트 (절대경로 사용)
+        debugLog(`Tracking file read for hash...`);
         await trackFileRead(absolutePath, content);
-        debugLog.push(`[${timestamp}] Hash tracked`);
+        internalDebugLog.push(`[${timestamp}] Hash tracked`);
+        debugLog(`Hash tracked`);
 
-        await fs.appendFile(DEBUG_LOG_FILE, debugLog.join('\n') + '\n');
+        // 파일 스냅샷 저장 (UI에서 diff 표시를 위해 필요)
+        debugLog(`Saving file snapshot for UI...`);
+        saveFileSnapshot(absolutePath, content);
+        debugLog(`Snapshot saved`);
+
+        await fs.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => {});
+        await fs.appendFile(LOG_FILE, internalDebugLog.join('\n') + '\n');
 
         // diff 생성 (기존 파일이 있었을 경우에만, 절대경로 사용)
         let diffInfo = null;
         if (fileExists) {
+            debugLog(`Generating diff...`);
             const patch = diff.createPatch(absolutePath, originalContent, content);
             const lineDiff = diff.diffLines(originalContent, content);
+
+            const addedCount = lineDiff.filter(part => part.added).reduce((sum, part) => sum + part.count, 0);
+            const removedCount = lineDiff.filter(part => part.removed).reduce((sum, part) => sum + part.count, 0);
+            const unchangedCount = lineDiff.filter(part => !part.added && !part.removed).reduce((sum, part) => sum + part.count, 0);
+
+            debugLog(`Diff generated: +${addedCount} -${removedCount} =${unchangedCount} lines`);
+
             diffInfo = {
                 unified_diff_patch: patch,
                 line_by_line_changes: lineDiff.filter(part => part.added || part.removed),
                 modification_statistics: {
-                    lines_added_count: lineDiff.filter(part => part.added).reduce((sum, part) => sum + part.count, 0),
-                    lines_removed_count: lineDiff.filter(part => part.removed).reduce((sum, part) => sum + part.count, 0),
-                    lines_unchanged_count: lineDiff.filter(part => !part.added && !part.removed).reduce((sum, part) => sum + part.count, 0)
+                    lines_added_count: addedCount,
+                    lines_removed_count: removedCount,
+                    lines_unchanged_count: unchangedCount
                 }
             };
         }
+
+        debugLog('========== write_file SUCCESS END ==========');
 
         return {
             operation_successful: true,
@@ -109,9 +175,14 @@ export async function write_file({ file_path, content }) {
             ...(diffInfo && diffInfo)
         };
     } catch (error) {
-        debugLog.push(`[${timestamp}] ERROR: ${error.message}`);
-        debugLog.push(`[${timestamp}] Stack: ${error.stack}`);
-        await fs.appendFile(DEBUG_LOG_FILE, debugLog.join('\n') + '\n').catch(() => {});
+        internalDebugLog.push(`[${timestamp}] ERROR: ${error.message}`);
+        internalDebugLog.push(`[${timestamp}] Stack: ${error.stack}`);
+        debugLog(`========== write_file EXCEPTION ==========`);
+        debugLog(`Exception caught: ${error.message}`);
+        debugLog(`Stack trace: ${error.stack}`);
+        debugLog('========== write_file EXCEPTION END ==========');
+        await fs.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => {});
+        await fs.appendFile(LOG_FILE, internalDebugLog.join('\n') + '\n').catch(() => {});
 
         // 에러 시에도 절대경로로 반환
         const absolutePath = resolve(file_path);
@@ -184,14 +255,35 @@ export const writeFileSchema = {
  */
 export async function edit_file_replace({ file_path, old_string, new_string, replace_all = false }) {
     try {
+        debugLog('========== edit_file_replace START ==========');
+        debugLog(`Input parameters:`);
+        debugLog(`  file_path: "${file_path}"`);
+        debugLog(`  - file_path type: ${typeof file_path}`);
+        debugLog(`  - file_path length: ${file_path?.length || 0}`);
+        debugLog(`  - file_path starts with '/': ${file_path?.startsWith('/') || false}`);
+        debugLog(`  - file_path starts with './': ${file_path?.startsWith('./') || false}`);
+        debugLog(`  - file_path starts with '../': ${file_path?.startsWith('../') || false}`);
+        debugLog(`  old_string length: ${old_string?.length || 0} bytes`);
+        debugLog(`  new_string length: ${new_string?.length || 0} bytes`);
+        debugLog(`  replace_all: ${replace_all}`);
+        debugLog(`  - Current Working Directory: ${process.cwd()}`);
+
         // 경로를 절대경로로 정규화
         const absolutePath = resolve(file_path);
+        debugLog(`Path Resolution:`);
+        debugLog(`  - Input path: "${file_path}"`);
+        debugLog(`  - Resolved absolute path: "${absolutePath}"`);
+        debugLog(`  - Path changed: ${file_path !== absolutePath}`);
+        debugLog(`  - Absolute path starts with '/': ${absolutePath.startsWith('/')}`);
+        debugLog(`  - Absolute path length: ${absolutePath.length}`);
 
         // 파일 존재 확인
         try {
             await fs.access(absolutePath);
+            debugLog(`File access OK`);
         } catch (error) {
             if (error.code === 'ENOENT') {
+                debugLog(`ERROR: File not found`);
                 return {
                     operation_successful: false,
                     error_message: `File not found: ${absolutePath}`,
@@ -202,22 +294,85 @@ export async function edit_file_replace({ file_path, old_string, new_string, rep
         }
 
         // 파일 무결성 검증 (절대경로 사용)
+        debugLog(`Calling assertFileIntegrity...`);
         await assertFileIntegrity(absolutePath);
+        debugLog(`assertFileIntegrity passed`);
 
         // 원본 파일 읽기 (절대경로 사용)
+        debugLog(`Reading file content...`);
         const originalContent = await fs.readFile(absolutePath, 'utf8');
+        debugLog(`File read successful:`);
+        debugLog(`  Content length: ${originalContent.length} bytes`);
+        debugLog(`  Line count: ${originalContent.split('\n').length}`);
+        debugLog(`  First 100 chars: ${JSON.stringify(originalContent.substring(0, 100))}`);
+        debugLog(`  Last 100 chars: ${JSON.stringify(originalContent.substring(Math.max(0, originalContent.length - 100)))}`);
+
+        // 파일 스냅샷 저장 (UI에서 diff 표시를 위해 필요)
+        debugLog(`Saving file snapshot for UI...`);
+        saveFileSnapshot(absolutePath, originalContent);
+        debugLog(`Snapshot saved`);
 
         // old_string과 new_string이 동일한지 검증
+        debugLog(`Checking if old_string === new_string...`);
         if (old_string === new_string) {
+            debugLog(`ERROR: old_string and new_string are identical`);
             return {
                 operation_successful: false,
                 error_message: "new_string must be different from old_string",
                 target_file_path: absolutePath
             };
         }
+        debugLog(`old_string and new_string are different (OK)`);
+
+        // old_string 상세 정보 로깅
+        debugLog(`old_string details:`);
+        debugLog(`  Length: ${old_string.length} bytes`);
+        debugLog(`  First 100 chars: ${JSON.stringify(old_string.substring(0, 100))}`);
+        debugLog(`  Last 100 chars: ${JSON.stringify(old_string.substring(Math.max(0, old_string.length - 100)))}`);
+        debugLog(`  Has newlines: ${old_string.includes('\n')}`);
+        debugLog(`  Has carriage returns: ${old_string.includes('\r')}`);
+        debugLog(`  Has tabs: ${old_string.includes('\t')}`);
+
+        // 특수 문자 분석
+        const oldStringBytes = Buffer.from(old_string, 'utf8');
+        debugLog(`  Byte representation (first 50): ${oldStringBytes.slice(0, 50).toString('hex')}`);
 
         // old_string이 파일에 존재하는지 확인
-        if (!originalContent.includes(old_string)) {
+        debugLog(`Checking if old_string exists in file using includes()...`);
+        const includesResult = originalContent.includes(old_string);
+        debugLog(`includes() result: ${includesResult}`);
+
+        if (!includesResult) {
+            // 추가 디버깅 정보
+            debugLog(`ERROR: old_string NOT FOUND in file`);
+            debugLog(`Attempting to find similar strings...`);
+
+            // indexOf로도 확인
+            const indexOfResult = originalContent.indexOf(old_string);
+            debugLog(`indexOf() result: ${indexOfResult}`);
+
+            // 부분 문자열 검색
+            if (old_string.length > 20) {
+                const prefix = old_string.substring(0, 20);
+                const prefixIndex = originalContent.indexOf(prefix);
+                debugLog(`First 20 chars found at index: ${prefixIndex}`);
+
+                if (prefixIndex !== -1) {
+                    const contextStart = Math.max(0, prefixIndex - 50);
+                    const contextEnd = Math.min(originalContent.length, prefixIndex + old_string.length + 50);
+                    const context = originalContent.substring(contextStart, contextEnd);
+                    debugLog(`Context around prefix match: ${JSON.stringify(context)}`);
+                }
+            }
+
+            // 줄바꿈 차이 검사
+            const normalizedOld = old_string.replace(/\r\n/g, '\n');
+            const normalizedContent = originalContent.replace(/\r\n/g, '\n');
+            const normalizedIncludes = normalizedContent.includes(normalizedOld);
+            debugLog(`After normalizing line endings, includes: ${normalizedIncludes}`);
+
+            debugLog('========== edit_file_replace ERROR END ==========');
+
             return {
                 operation_successful: false,
                 error_message: `old_string not found in file`,
@@ -225,45 +380,78 @@ export async function edit_file_replace({ file_path, old_string, new_string, rep
             };
         }
 
+        debugLog(`old_string FOUND in file (OK)`);
+        const firstOccurrenceIndex = originalContent.indexOf(old_string);
+        debugLog(`First occurrence at index: ${firstOccurrenceIndex}`);
+
+        // 컨텍스트 출력
+        if (firstOccurrenceIndex !== -1) {
+            const contextStart = Math.max(0, firstOccurrenceIndex - 50);
+            const contextEnd = Math.min(originalContent.length, firstOccurrenceIndex + old_string.length + 50);
+            const context = originalContent.substring(contextStart, contextEnd);
+            debugLog(`Context around first match: ${JSON.stringify(context)}`);
+        }
+
         // replace_all이 false일 때 고유성 검증
+        debugLog(`Checking uniqueness (replace_all=${replace_all})...`);
         if (!replace_all) {
             const firstIndex = originalContent.indexOf(old_string);
             const lastIndex = originalContent.lastIndexOf(old_string);
+            debugLog(`  First occurrence index: ${firstIndex}`);
+            debugLog(`  Last occurrence index: ${lastIndex}`);
+
             if (firstIndex !== lastIndex) {
+                debugLog(`ERROR: old_string is NOT unique (found at multiple positions)`);
+                debugLog('========== edit_file_replace ERROR END ==========');
                 return {
                     operation_successful: false,
                     error_message: `old_string is not unique in the file. Use replace_all: true to replace all occurrences, or provide more context to make old_string unique.`,
                     target_file_path: absolutePath
                 };
             }
+            debugLog(`old_string is unique (OK)`);
         }
 
         // 문자열 교체
+        debugLog(`Performing string replacement...`);
         let newContent;
         let replacementCount;
         if (replace_all) {
             // 모든 발생 교체
+            debugLog(`Mode: replace_all=true`);
             const escapedOld = escapeRegExp(old_string);
+            debugLog(`Escaped regex pattern length: ${escapedOld.length}`);
             const regex = new RegExp(escapedOld, 'g');
             const matches = originalContent.match(regex);
             replacementCount = matches ? matches.length : 0;
+            debugLog(`Found ${replacementCount} occurrences to replace`);
             // new_string에 $ 특수문자가 있어도 안전하게 교체하기 위해 함수 사용
             newContent = originalContent.replace(regex, () => new_string);
         } else {
             // 첫 번째 발생만 교체
+            debugLog(`Mode: replace_all=false (single replacement)`);
             replacementCount = 1;
             newContent = originalContent.replace(old_string, new_string);
         }
+        debugLog(`Replacement complete. New content length: ${newContent.length} bytes`);
 
         // 파일 저장 (절대경로 사용)
+        debugLog(`Writing file...`);
         await fs.writeFile(absolutePath, newContent, 'utf8');
+        debugLog(`File written successfully`);
 
         // 파일 수정 후 해시 업데이트 (절대경로 사용)
+        debugLog(`Updating file hash...`);
         await trackFileRead(absolutePath, newContent);
+        debugLog(`Hash updated`);
 
         // diff 생성 (절대경로 사용)
+        debugLog(`Generating diff...`);
         const patch = diff.createPatch(absolutePath, originalContent, newContent);
         const lineDiff = diff.diffLines(originalContent, newContent);
+        debugLog(`Diff generated`);
+
+        debugLog('========== edit_file_replace SUCCESS END ==========');
 
         return {
             operation_successful: true,
@@ -288,6 +476,10 @@ export async function edit_file_replace({ file_path, old_string, new_string, rep
     } catch (error) {
         // 에러 시에도 절대경로로 반환
         const absolutePath = resolve(file_path);
+        debugLog(`========== edit_file_replace EXCEPTION ==========`);
+        debugLog(`Exception caught: ${error.message}`);
+        debugLog(`Stack trace: ${error.stack}`);
+        debugLog('========== edit_file_replace EXCEPTION END ==========');
         return {
             operation_successful: false,
             error_message: error.message,
@@ -312,15 +504,39 @@ export async function edit_file_replace({ file_path, old_string, new_string, rep
  * @returns {Promise<Object>} 편집 결과
  */
 export async function edit_file_range({ file_path, start_line, end_line, new_content }) {
+    debugLog('========== edit_file_range START ==========');
+    debugLog(`Input parameters:`);
+    debugLog(`  file_path: "${file_path}"`);
+    debugLog(`  - file_path type: ${typeof file_path}`);
+    debugLog(`  - file_path length: ${file_path?.length || 0}`);
+    debugLog(`  - file_path starts with '/': ${file_path?.startsWith('/') || false}`);
+    debugLog(`  - file_path starts with './': ${file_path?.startsWith('./') || false}`);
+    debugLog(`  - file_path starts with '../': ${file_path?.startsWith('../') || false}`);
+    debugLog(`  start_line: ${start_line}`);
+    debugLog(`  end_line: ${end_line}`);
+    debugLog(`  new_content length: ${new_content?.length || 0} bytes`);
+    debugLog(`  new_content first 100 chars: ${JSON.stringify(new_content?.substring(0, 100) || '')}`);
+    debugLog(`  - Current Working Directory: ${process.cwd()}`);
+
     try {
         // 경로를 절대경로로 정규화
         const absolutePath = resolve(file_path);
+        debugLog(`Path Resolution:`);
+        debugLog(`  - Input path: "${file_path}"`);
+        debugLog(`  - Resolved absolute path: "${absolutePath}"`);
+        debugLog(`  - Path changed: ${file_path !== absolutePath}`);
+        debugLog(`  - Absolute path starts with '/': ${absolutePath.startsWith('/')}`);
+        debugLog(`  - Absolute path length: ${absolutePath.length}`);
 
         // 파일 존재 확인
+        debugLog(`Checking if file exists...`);
         try {
             await fs.access(absolutePath);
+            debugLog(`File access OK`);
         } catch (error) {
             if (error.code === 'ENOENT') {
+                debugLog(`ERROR: File not found`);
+                debugLog('========== edit_file_range ERROR END ==========');
                 return {
                     operation_successful: false,
                     error_message: `File not found: ${absolutePath}`,
@@ -331,10 +547,22 @@ export async function edit_file_range({ file_path, start_line, end_line, new_con
         }
 
         // 파일 무결성 검증 (절대경로 사용)
+        debugLog(`Calling assertFileIntegrity...`);
         await assertFileIntegrity(absolutePath);
+        debugLog(`assertFileIntegrity passed`);
 
         // 원본 파일 읽기 (절대경로 사용)
+        debugLog(`Reading file content...`);
         const originalContent = await fs.readFile(absolutePath, 'utf8');
+        debugLog(`File read successful:`);
+        debugLog(`  Content length: ${originalContent.length} bytes`);
+        debugLog(`  Line count: ${originalContent.split('\n').length}`);
+
+        // 파일 스냅샷 저장 (UI에서 diff 표시를 위해 필요)
+        debugLog(`Saving file snapshot for UI...`);
+        saveFileSnapshot(absolutePath, originalContent);
+        debugLog(`Snapshot saved`);
+
         const originalLines = originalContent.split('\n');
 
         // Handle files without trailing newline correctly
@@ -344,8 +572,15 @@ export async function edit_file_range({ file_path, start_line, end_line, new_con
         const actualLines = originalContent === '' ? [] :
             (originalContent.endsWith('\n') ? originalLines.slice(0, -1) : originalLines);
 
+        debugLog(`File analysis:`);
+        debugLog(`  Total lines: ${totalLines}`);
+        debugLog(`  Actual lines array length: ${actualLines.length}`);
+
         // 간단한 검증: start_line은 1 이상, end_line은 start_line-1 이상
+        debugLog(`Validating line numbers...`);
         if (start_line < 1) {
+            debugLog(`ERROR: start_line < 1`);
+            debugLog('========== edit_file_range ERROR END ==========');
             return {
                 operation_successful: false,
                 error_message: "start_line must be >= 1",
@@ -354,6 +589,8 @@ export async function edit_file_range({ file_path, start_line, end_line, new_con
         }
 
         if (end_line < start_line - 1) {
+            debugLog(`ERROR: end_line < start_line-1`);
+            debugLog('========== edit_file_range ERROR END ==========');
             return {
                 operation_successful: false,
                 error_message: `end_line must be >= start_line-1 (got start=${start_line}, end=${end_line})`,
@@ -362,6 +599,8 @@ export async function edit_file_range({ file_path, start_line, end_line, new_con
         }
 
         if (start_line > totalLines + 1) {
+            debugLog(`ERROR: start_line > totalLines+1`);
+            debugLog('========== edit_file_range ERROR END ==========');
             return {
                 operation_successful: false,
                 error_message: `start_line ${start_line} exceeds file length ${totalLines}`,
@@ -370,6 +609,8 @@ export async function edit_file_range({ file_path, start_line, end_line, new_con
         }
 
         if (end_line > totalLines) {
+            debugLog(`ERROR: end_line > totalLines`);
+            debugLog('========== edit_file_range ERROR END ==========');
             return {
                 operation_successful: false,
                 error_message: `end_line ${end_line} exceeds file length ${totalLines}`,
@@ -377,12 +618,21 @@ export async function edit_file_range({ file_path, start_line, end_line, new_con
             };
         }
 
+        debugLog(`Line number validation passed`);
+
         // 단일 통합 로직: start_line부터 end_line까지 삭제 후 new_content 삽입
         const newLines = new_content === '' ? [] : new_content.split('\n');
+        debugLog(`new_content split into ${newLines.length} lines`);
 
         const beforeLines = actualLines.slice(0, start_line - 1);  // start_line 이전
         const afterLines = actualLines.slice(end_line);             // end_line 이후 (start~end 삭제됨)
         const editedLines = [...beforeLines, ...newLines, ...afterLines];
+
+        debugLog(`Line editing:`);
+        debugLog(`  Before lines: ${beforeLines.length}`);
+        debugLog(`  New lines: ${newLines.length}`);
+        debugLog(`  After lines: ${afterLines.length}`);
+        debugLog(`  Total edited lines: ${editedLines.length}`);
 
         // 작업 타입 자동 감지
         const deletedCount = end_line - start_line + 1;
@@ -392,14 +642,23 @@ export async function edit_file_range({ file_path, start_line, end_line, new_con
         else if (insertedCount === 0) operationType = 'delete';
         else operationType = 'replace';
 
+        debugLog(`Operation type: ${operationType} (deleted: ${deletedCount}, inserted: ${insertedCount})`);
+
         // 새로운 파일 내용 생성
         const newFileContent = editedLines.join('\n');
+        debugLog(`New file content length: ${newFileContent.length} bytes`);
 
         // 파일 저장 (절대경로 사용)
+        debugLog(`Writing file...`);
         await fs.writeFile(absolutePath, newFileContent, 'utf8');
+        debugLog(`File written successfully`);
 
         // 파일 수정 후 해시 업데이트 (절대경로 사용)
+        debugLog(`Updating file hash...`);
         await trackFileRead(absolutePath, newFileContent);
+        debugLog(`Hash updated`);
+
+        debugLog('========== edit_file_range SUCCESS END ==========');
 
         return {
             operation_successful: true,
@@ -412,6 +671,11 @@ export async function edit_file_range({ file_path, start_line, end_line, new_con
         };
 
     } catch (error) {
+        debugLog(`========== edit_file_range EXCEPTION ==========`);
+        debugLog(`Exception caught: ${error.message}`);
+        debugLog(`Stack trace: ${error.stack}`);
+        debugLog('========== edit_file_range EXCEPTION END ==========');
+
         // 에러 시에도 절대경로로 반환
         const absolutePath = resolve(file_path);
         return {

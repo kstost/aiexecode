@@ -16,15 +16,26 @@ import { logSystem, logInfo, logSuccess, logWarning, logError, logAssistantMessa
 import { requiresApproval, requestApproval } from "./tool_approval.js";
 import { setCurrentSession, saveFileSnapshot, getFileSnapshot } from "./file_integrity.js";
 import { abortCurrentRequest } from "./ai_request.js";
-import { promises as fs, appendFileSync } from 'fs';
+import { promises as fs, appendFileSync, mkdirSync } from 'fs';
+import { resolve, join, dirname } from 'path';
+import { existsSync } from 'fs';
 import { ENABLE_DEBUG_LOG } from '../config/config.js';
+import { DEBUG_LOG_DIR } from '../util/config.js';
+
+// Debug logging configuration
+const LOG_FILE = join(DEBUG_LOG_DIR, 'session.log');
 
 // Debug logging helper
 function debugLog(message) {
     if (!ENABLE_DEBUG_LOG) return;
     try {
+        // 디렉토리가 없으면 생성 (동기)
+        const logDir = dirname(LOG_FILE);
+        if (!existsSync(logDir)) {
+            mkdirSync(logDir, { recursive: true });
+        }
         const timestamp = new Date().toISOString();
-        appendFileSync('debug.txt', `[${timestamp}] ${message}\n`);
+        appendFileSync(LOG_FILE, `[${timestamp}] ${message}\n`);
     } catch (err) {
         // Ignore logging errors
     }
@@ -294,6 +305,7 @@ const LOOP_CONTROL = {
  * Orchestrator 응답을 처리하는 함수
  */
 async function processOrchestratorResponses(params) {
+    debugLog('========== processOrchestratorResponses START ==========');
     const {
         orchestratedResponse: initialResponse,
         execution_output_list,
@@ -307,70 +319,111 @@ async function processOrchestratorResponses(params) {
         sessionID
     } = params;
 
+    debugLog(`Parameters:`);
+    debugLog(`  sessionID: ${sessionID}`);
+    debugLog(`  iteration_count: ${iteration_count}`);
+    debugLog(`  mission: ${mission?.substring(0, 100)}${mission?.length > 100 ? '...' : ''}`);
+    debugLog(`  sub_mission: ${sub_mission || 'none'}`);
+    debugLog(`  initialResponse outputs: ${initialResponse?.output?.length || 0}`);
+    debugLog(`  existing toolUsageHistory: ${toolUsageHistory.length} items`);
+    debugLog(`  existing execution_output_list: ${execution_output_list.length} items`);
+
     let orchestratedResponse = initialResponse;
     let reasoningOnlyResponses = 0;
     let hadAnyFunctionCall = false;
     let stallDetected = false;
     let missionSolved = false;
 
+    debugLog(`Starting response processing loop...`);
+    let loopIteration = 0;
     while (true) {
+        loopIteration++;
+        debugLog(`---------- Loop iteration ${loopIteration} START ----------`);
         // 세션이 중단되었는지 확인
         if (sessionInterrupted) {
+            debugLog(`Session interrupted, breaking loop`);
             break;
         }
 
         const outputs = orchestratedResponse?.output ?? [];
+        debugLog(`Received ${outputs.length} outputs from orchestrator`);
+
+        // 출력 타입별 카운트
+        const outputTypes = {};
+        outputs.forEach(o => {
+            const type = o?.type || 'unknown';
+            outputTypes[type] = (outputTypes[type] || 0) + 1;
+        });
+        debugLog(`Output types: ${JSON.stringify(outputTypes)}`);
 
         // 처리 가능한 출력이 없는 경우
         const hasProcessableOutput = outputs.some(
             item => item && item.type !== 'reasoning' && item.type !== 'function_call_output'
         );
+        debugLog(`Has processable output: ${hasProcessableOutput}`);
 
         if (!hasProcessableOutput) {
+            debugLog(`No processable output, reasoningOnlyResponses: ${reasoningOnlyResponses}`);
             if (reasoningOnlyResponses >= MAX_REASONING_ONLY_RESPONSES) {
+                debugLog(`Reached MAX_REASONING_ONLY_RESPONSES (${MAX_REASONING_ONLY_RESPONSES}), treating as stall`);
                 uiEvents.addSystemMessage('⚠ Orchestrator stalled (reasoning only) - treating as completion');
                 stallDetected = true;
                 break;
             }
+            debugLog(`Continuing orchestrator conversation...`);
             try {
                 orchestratedResponse = await continueOrchestratorConversation();
+                debugLog(`Continued conversation, received ${orchestratedResponse?.output?.length || 0} new outputs`);
             } catch (err) {
                 if (err.name === 'AbortError' || sessionInterrupted) {
+                    debugLog(`Conversation aborted or interrupted: ${err.name}`);
                     break;
                 }
+                debugLog(`ERROR in continueOrchestratorConversation: ${err.message}`);
                 throw err;
             }
             reasoningOnlyResponses += 1;
             continue;
         }
 
+        debugLog(`Processing ${outputs.length} outputs...`);
         reasoningOnlyResponses = 0;
         let executedFunctionCall = false;
         let lastOutputType = null;
 
         // 각 출력 처리
-        for (const output of outputs) {
+        for (let outputIndex = 0; outputIndex < outputs.length; outputIndex++) {
+            const output = outputs[outputIndex];
+            debugLog(`  --- Processing output ${outputIndex + 1}/${outputs.length} ---`);
+
             // 세션이 중단되었는지 확인
             if (sessionInterrupted) {
+                debugLog(`  Session interrupted, breaking output loop`);
                 break;
             }
 
             const type = output.type;
+            debugLog(`  Output type: ${type}`);
+
             if (type === 'reasoning' || type === 'function_call_output') {
+                debugLog(`  Skipping ${type} output`);
                 continue;
             }
 
             const MESSAGE = type === 'message';
             const FUNCTION_CALL = type === 'function_call';
+            debugLog(`  Is MESSAGE: ${MESSAGE}, Is FUNCTION_CALL: ${FUNCTION_CALL}`);
 
             lastOutputType = type;
             let exe_result = {};
             let content;
 
             if (MESSAGE) {
+                debugLog(`  Processing MESSAGE output...`);
                 const { exeResult, content: msgContent } = processMessageOutput(output);
                 exe_result = exeResult;
                 content = msgContent;
+                debugLog(`  MESSAGE processed: content length ${msgContent?.length || 0}`);
             }
 
             if (FUNCTION_CALL) {
@@ -378,13 +431,20 @@ async function processOrchestratorResponses(params) {
                 hadAnyFunctionCall = true;
                 const argument = JSON.parse(output.arguments || '{}');
                 const name = output.name;
+                debugLog(`  FUNCTION_CALL: ${name}`);
+                debugLog(`  Arguments keys: ${Object.keys(argument).join(', ')}`);
+                if (argument.file_path) {
+                    debugLog(`  file_path argument: ${argument.file_path}`);
+                }
                 const operation = name;
 
                 const isCodeExecution = name === 'run_python_code' || name === 'bash';
+                debugLog(`  Is code execution: ${isCodeExecution}`);
 
                 let toolOriginalResult = null;  // 원본 도구 결과 저장용
 
                 if (!isCodeExecution) {
+                    debugLog(`  Calling processToolCall for ${name}...`);
                     const { exeResult: toolResult, originalResult, content: toolContent } = await processToolCall(
                         name,
                         argument,
@@ -394,7 +454,18 @@ async function processOrchestratorResponses(params) {
                     exe_result = toolResult;
                     toolOriginalResult = originalResult;
                     content = toolContent;
+                    debugLog(`  processToolCall completed:`);
+                    debugLog(`    exe_result.code: ${exe_result.code}`);
+                    debugLog(`    originalResult exists: ${!!originalResult}`);
+                    if (originalResult) {
+                        debugLog(`    originalResult.operation_successful: ${originalResult.operation_successful}`);
+                        if (originalResult.target_file_path) {
+                            debugLog(`    originalResult.target_file_path: ${originalResult.target_file_path}`);
+                        }
+                    }
+                    debugLog(`    content length: ${toolContent?.length || 0}`);
                 } else {
+                    debugLog(`  Calling processCodeExecution for ${name}...`);
                     const { exeResult: codeResult, content: codeContent } = await processCodeExecution(
                         name,
                         argument,
@@ -402,6 +473,7 @@ async function processOrchestratorResponses(params) {
                     );
                     exe_result = codeResult;
                     content = codeContent;
+                    debugLog(`  processCodeExecution completed: exe_result.code ${exe_result.code}`);
                 }
 
                 exe_result.more_info = {
@@ -437,12 +509,18 @@ async function processOrchestratorResponses(params) {
 
                 // edit_file_range 또는 edit_file_replace인 경우 스냅샷을 historyObject에 포함
                 if ((name === 'edit_file_range' || name === 'edit_file_replace') && argument.file_path) {
-                    const snapshot = getFileSnapshot(argument.file_path);
+                    // 절대 경로로 변환 (스냅샷은 절대 경로로 저장됨)
+                    const absolutePath = resolve(argument.file_path);
+                    debugLog(`[processOrchestratorResponses] Getting fileSnapshot for: ${absolutePath}`);
+                    const snapshot = getFileSnapshot(absolutePath);
                     if (snapshot) {
+                        debugLog(`[processOrchestratorResponses] fileSnapshot found: ${snapshot.content.length} bytes`);
                         historyObject.fileSnapshot = {
                             content: snapshot.content,
                             timestamp: snapshot.timestamp
                         };
+                    } else {
+                        debugLog(`[processOrchestratorResponses] fileSnapshot NOT found for: ${absolutePath}`);
                     }
                 }
 
@@ -481,26 +559,46 @@ async function processOrchestratorResponses(params) {
             }
         }
 
+        debugLog(`---------- Loop iteration ${loopIteration} END ----------`);
+        debugLog(`  executedFunctionCall: ${executedFunctionCall}`);
+        debugLog(`  lastOutputType: ${lastOutputType}`);
+        debugLog(`  toolUsageHistory now has ${toolUsageHistory.length} items`);
+
         // 완료 조건 체크
+        debugLog(`Checking completion conditions...`);
         if (!executedFunctionCall && lastOutputType === 'message') {
+            debugLog(`COMPLETION: No function call + message type = mission solved`);
             missionSolved = true;
             break;
         }
 
         if (!executedFunctionCall) {
+            debugLog(`COMPLETION: No function call executed, breaking loop`);
             break;
         }
 
         // continueOrchestratorConversation 호출
+        debugLog(`Continuing orchestrator conversation for next iteration...`);
         try {
             orchestratedResponse = await continueOrchestratorConversation();
+            debugLog(`Received response with ${orchestratedResponse?.output?.length || 0} outputs`);
         } catch (err) {
             if (err.name === 'AbortError' || sessionInterrupted) {
+                debugLog(`Conversation aborted or interrupted: ${err.name}`);
                 break;
             }
+            debugLog(`ERROR in continueOrchestratorConversation: ${err.message}`);
             throw err;
         }
     }
+
+    debugLog('========== processOrchestratorResponses END ==========');
+    debugLog(`Final state:`);
+    debugLog(`  hadAnyFunctionCall: ${hadAnyFunctionCall}`);
+    debugLog(`  stallDetected: ${stallDetected}`);
+    debugLog(`  missionSolved: ${missionSolved}`);
+    debugLog(`  Total loop iterations: ${loopIteration}`);
+    debugLog(`  Final toolUsageHistory: ${toolUsageHistory.length} items`);
 
     return {
         hadAnyFunctionCall,

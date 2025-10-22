@@ -6,8 +6,28 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import { common, createLowlight } from 'lowlight';
 import { diffLines } from 'diff';
+import { promises as fs } from 'fs';
+import { join, dirname } from 'path';
+import { DEBUG_LOG_DIR } from '../../util/config.js';
 
 const lowlight = createLowlight(common);
+
+// Debug logging configuration
+const ENABLE_DEBUG_LOG = true;
+const LOG_FILE = join(DEBUG_LOG_DIR, 'ui_file_diff_viewer.log');
+
+// Debug logging helper
+async function debugLog(message) {
+    if (!ENABLE_DEBUG_LOG) return;
+    try {
+        // 디렉토리가 없으면 생성
+        await fs.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => {});
+        const timestamp = new Date().toISOString();
+        await fs.appendFile(LOG_FILE, `[${timestamp}] ${message}\n`).catch(() => {});
+    } catch (err) {
+        // Ignore logging errors
+    }
+}
 
 /**
  * Theme color mapping for syntax highlighting
@@ -234,19 +254,42 @@ function UnifiedDiffLine({ oldLineNum, newLineNum, content, type, language }) {
  * Main FileDiffViewer component - Unified diff format
  */
 export function FileDiffViewer({ filePath, startLine, endLine, oldContent, newContent, contextBefore = [], contextAfter = [], contextStartLine = null }) {
+    debugLog('========== FileDiffViewer RENDER START ==========');
+    debugLog(`filePath: ${filePath}`);
+    debugLog(`startLine: ${startLine}, endLine: ${endLine}`);
+    debugLog(`oldContent length: ${oldContent?.length || 0} bytes`);
+    debugLog(`newContent length: ${newContent?.length || 0} bytes`);
+    debugLog(`contextBefore lines: ${contextBefore.length}`);
+    debugLog(`contextAfter lines: ${contextAfter.length}`);
+    debugLog(`contextStartLine: ${contextStartLine}`);
+
     try {
+        debugLog(`Parsing content lines...`);
         const { beforeLines, afterLines } = parseContentLines(oldContent, newContent);
+        debugLog(`beforeLines: ${beforeLines.length}, afterLines: ${afterLines.length}`);
+
         const language = detectLanguage(filePath);
+        debugLog(`Detected language: ${language || 'none'}`);
 
         // contextStartLine이 제공되지 않으면 startLine - contextBefore.length로 계산
         const actualContextStartLine = contextStartLine !== null ? contextStartLine : (startLine - contextBefore.length);
+        debugLog(`actualContextStartLine: ${actualContextStartLine}`);
 
+        debugLog(`Calculating diff...`);
         const diff = calculateDiff(beforeLines, afterLines);
+        debugLog(`Diff items: ${diff.length}`);
 
         // Calculate line count changes for header
         const removedCount = diff.filter(item => item.type === 'removed').length;
         const addedCount = diff.filter(item => item.type === 'added').length;
+        const unchangedCount = diff.filter(item => item.type === 'unchanged').length;
         const afterEndLine = endLine + (addedCount - removedCount);
+
+        debugLog(`Diff statistics:`);
+        debugLog(`  Removed: ${removedCount}`);
+        debugLog(`  Added: ${addedCount}`);
+        debugLog(`  Unchanged: ${unchangedCount}`);
+        debugLog(`  afterEndLine: ${afterEndLine}`);
 
         const element = React.createElement(Box, { flexDirection: 'column', width: '100%', marginBottom: 1 },
             React.createElement(Box, { flexDirection: 'column', borderStyle: 'single', borderColor: '#4a4a4a' },
@@ -339,8 +382,15 @@ export function FileDiffViewer({ filePath, startLine, endLine, oldContent, newCo
             )
         );
 
+        debugLog(`React element created successfully`);
+        debugLog('========== FileDiffViewer RENDER END (SUCCESS) ==========');
         return element;
     } catch (error) {
+        debugLog(`========== FileDiffViewer RENDER ERROR ==========`);
+        debugLog(`Error: ${error.message}`);
+        debugLog(`Stack: ${error.stack}`);
+        debugLog('========== FileDiffViewer RENDER END (ERROR) ==========');
+
         return React.createElement(Box, { flexDirection: 'column' },
             React.createElement(Text, { color: 'red' }, `Diff error: ${error.message}`)
         );

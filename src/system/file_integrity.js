@@ -2,10 +2,28 @@
 // 파일 편집 전 무결성을 검증하여 안전한 코드 편집을 보장합니다.
 
 import { promises as fs } from 'fs';
+import { join, dirname } from 'path';
 import crypto from 'crypto';
-import { DEBUG_LOG_FILE } from '../util/config.js';
+import { DEBUG_LOG_DIR } from '../util/config.js';
 
 function consolelog() { }
+
+// Debug logging configuration
+const ENABLE_DEBUG_LOG = true;
+const LOG_FILE = join(DEBUG_LOG_DIR, 'file_integrity.log');
+
+// Debug logging helper
+async function debugLog(message) {
+    if (!ENABLE_DEBUG_LOG) return;
+    try {
+        // 디렉토리가 없으면 생성
+        await fs.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => {});
+        const timestamp = new Date().toISOString();
+        await fs.appendFile(LOG_FILE, `[${timestamp}] ${message}\n`).catch(() => {});
+    } catch (err) {
+        // Ignore logging errors
+    }
+}
 /**
  * 파일 무결성 추적 시스템
  * 각 세션별로 파일 콘텐츠 해시를 추적하고, 편집 전 파일 변경 여부를 검증합니다.
@@ -26,6 +44,8 @@ class FileIntegrityTracker {
      */
     setCurrentSession(sessionID) {
         this.currentSessionID = sessionID;
+        debugLog(`========== SESSION CHANGED ==========`);
+        debugLog(`New session ID: ${sessionID}`);
         consolelog(`[FileIntegrity] Current session set to: ${sessionID}`);
     }
 
@@ -45,30 +65,48 @@ class FileIntegrityTracker {
      */
     async trackRead(sessionID, filePath, content) {
         const timestamp = new Date().toISOString();
-        const debugLog = [];
+        const internalDebugLog = [];
 
-        debugLog.push(`[${timestamp}] trackRead called`);
-        debugLog.push(`[${timestamp}] sessionID: ${sessionID}`);
-        debugLog.push(`[${timestamp}] filePath: ${filePath}`);
-        debugLog.push(`[${timestamp}] content size: ${typeof content === 'string' ? content.length : content?.length || 0} bytes`);
+        debugLog(`========== trackRead START ==========`);
+        debugLog(`sessionID: ${sessionID}`);
+        debugLog(`filePath: ${filePath}`);
+        debugLog(`  - filePath type: ${typeof filePath}`);
+        debugLog(`  - filePath length: ${filePath?.length || 0}`);
+        debugLog(`  - filePath starts with '/': ${filePath?.startsWith('/') || false}`);
+        debugLog(`  - filePath is absolute path: ${filePath?.startsWith('/') || false}`);
+        debugLog(`  - Current Working Directory: ${process.cwd()}`);
+        debugLog(`content size: ${typeof content === 'string' ? content.length : content?.length || 0} bytes`);
+
+        internalDebugLog.push(`[${timestamp}] trackRead called`);
+        internalDebugLog.push(`[${timestamp}] sessionID: ${sessionID}`);
+        internalDebugLog.push(`[${timestamp}] filePath: ${filePath}`);
+        internalDebugLog.push(`[${timestamp}] filePath type: ${typeof filePath}`);
+        internalDebugLog.push(`[${timestamp}] filePath is absolute: ${filePath?.startsWith('/') || false}`);
+        internalDebugLog.push(`[${timestamp}] content size: ${typeof content === 'string' ? content.length : content?.length || 0} bytes`);
 
         if (!this.contentHashes.has(sessionID)) {
             this.contentHashes.set(sessionID, new Map());
-            debugLog.push(`[${timestamp}] Created new session map`);
+            debugLog(`Created new session map for session: ${sessionID}`);
+            internalDebugLog.push(`[${timestamp}] Created new session map`);
         }
 
         const hash = crypto.createHash('sha256')
             .update(content, typeof content === 'string' ? 'utf8' : undefined)
             .digest('hex');
 
-        debugLog.push(`[${timestamp}] Hash: ${hash.slice(0, 16)}...`);
+        debugLog(`Computed hash: ${hash.slice(0, 16)}...`);
+        internalDebugLog.push(`[${timestamp}] Hash: ${hash.slice(0, 16)}...`);
 
         const sessionFiles = this.contentHashes.get(sessionID);
         sessionFiles.set(filePath, hash);
 
-        debugLog.push(`[${timestamp}] Hash stored successfully`);
-        await fs.appendFile(DEBUG_LOG_FILE, debugLog.join('\n') + '\n').catch(() => {});
+        debugLog(`Hash stored in session map`);
+        debugLog(`Total files tracked in this session: ${sessionFiles.size}`);
+        internalDebugLog.push(`[${timestamp}] Hash stored successfully`);
+        await fs.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => {});
+        await fs.appendFile(LOG_FILE, internalDebugLog.join('\n') + '\n').catch(() => {});
 
+        debugLog(`========== trackRead END ==========`);
         consolelog(`[FileIntegrity] Tracked read: ${sessionID}:${filePath} (hash: ${hash.slice(0, 8)}...)`);
     }
 
@@ -92,33 +130,64 @@ class FileIntegrityTracker {
      */
     async assertIntegrity(sessionID, filePath) {
         const timestamp = new Date().toISOString();
-        const debugLog = [];
+        const assertDebugLog = [];
 
-        debugLog.push(`[${timestamp}] assertIntegrity called`);
-        debugLog.push(`[${timestamp}] sessionID: ${sessionID}`);
-        debugLog.push(`[${timestamp}] filePath: ${filePath}`);
+        debugLog(`========== assertIntegrity START ==========`);
+        debugLog(`sessionID: ${sessionID}`);
+        debugLog(`filePath: ${filePath}`);
+        debugLog(`  - filePath type: ${typeof filePath}`);
+        debugLog(`  - filePath length: ${filePath?.length || 0}`);
+        debugLog(`  - filePath starts with '/': ${filePath?.startsWith('/') || false}`);
+        debugLog(`  - filePath is absolute path: ${filePath?.startsWith('/') || false}`);
+        debugLog(`  - Current Working Directory: ${process.cwd()}`);
+
+        assertDebugLog.push(`[${timestamp}] assertIntegrity called`);
+        assertDebugLog.push(`[${timestamp}] sessionID: ${sessionID}`);
+        assertDebugLog.push(`[${timestamp}] filePath: ${filePath}`);
+        assertDebugLog.push(`[${timestamp}] filePath type: ${typeof filePath}`);
+        assertDebugLog.push(`[${timestamp}] filePath is absolute: ${filePath?.startsWith('/') || false}`);
 
         const savedHash = this.getContentHash(sessionID, filePath);
-        debugLog.push(`[${timestamp}] savedHash: ${savedHash || 'null'}`);
+        assertDebugLog.push(`[${timestamp}] savedHash: ${savedHash || 'null'}`);
+        debugLog(`Saved hash lookup result: ${savedHash ? 'FOUND' : 'NOT FOUND'}`);
+        if (savedHash) {
+            debugLog(`  - Hash prefix: ${savedHash.slice(0, 16)}...`);
+        }
 
         if (!savedHash) {
-            debugLog.push(`[${timestamp}] ERROR: No saved hash found`);
-            await fs.appendFile(DEBUG_LOG_FILE, debugLog.join('\n') + '\n').catch(() => {});
+            assertDebugLog.push(`[${timestamp}] ERROR: No saved hash found`);
+            debugLog(`ERROR: No saved hash found for this file in session ${sessionID}`);
+            debugLog('========== assertIntegrity ERROR END ==========');
+            await fs.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => {});
+            await fs.appendFile(LOG_FILE, assertDebugLog.join('\n') + '\n').catch(() => {});
 
             throw new Error(
                 `You must read the file ${filePath} before editing it. Use a file reading tool first.`
             );
         }
 
-        await fs.appendFile(DEBUG_LOG_FILE, debugLog.join('\n') + '\n').catch(() => {});
+        await fs.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => {});
+        await fs.appendFile(LOG_FILE, assertDebugLog.join('\n') + '\n').catch(() => {});
 
+        debugLog(`Reading current file content for comparison...`);
+        debugLog(`  - Reading from path: ${filePath}`);
         try {
             const currentContent = await fs.readFile(filePath, 'utf8');
+            debugLog(`Current file read successful:`);
+            debugLog(`  - Content length: ${currentContent.length} bytes`);
+
             const currentHash = crypto.createHash('sha256')
                 .update(currentContent, 'utf8')
                 .digest('hex');
+            debugLog(`Current hash computed: ${currentHash.slice(0, 16)}...`);
+            debugLog(`Hash comparison:`);
+            debugLog(`  - Saved hash:   ${savedHash.slice(0, 16)}...`);
+            debugLog(`  - Current hash: ${currentHash.slice(0, 16)}...`);
+            debugLog(`  - Hashes match: ${savedHash === currentHash}`);
 
             if (savedHash !== currentHash) {
+                debugLog(`ERROR: File has been modified since last read`);
+                debugLog('========== assertIntegrity ERROR END ==========');
                 throw new Error(
                     `File ${filePath} has been modified since it was last read.\n` +
                     `Saved hash: ${savedHash.slice(0, 16)}...\n` +
@@ -126,13 +195,20 @@ class FileIntegrityTracker {
                     `Please read the file again before modifying it.`
                 );
             }
+
+            debugLog(`File integrity verified successfully`);
+            debugLog('========== assertIntegrity SUCCESS END ==========');
         } catch (error) {
             if (error.code === 'ENOENT') {
+                debugLog(`ERROR: File has been deleted since last read`);
+                debugLog('========== assertIntegrity ERROR END ==========');
                 throw new Error(
                     `File ${filePath} has been deleted since it was last read.\n` +
                     `Please verify the file exists before modifying it.`
                 );
             }
+            debugLog(`ERROR: Exception during integrity check: ${error.message}`);
+            debugLog('========== assertIntegrity EXCEPTION END ==========');
             throw error;
         }
     }
@@ -144,8 +220,19 @@ class FileIntegrityTracker {
      * @param {string} content - 파일 원본 내용
      */
     saveSnapshot(sessionID, filePath, content) {
+        debugLog(`========== saveSnapshot START ==========`);
+        debugLog(`sessionID: ${sessionID}`);
+        debugLog(`filePath: ${filePath}`);
+        debugLog(`  - filePath type: ${typeof filePath}`);
+        debugLog(`  - filePath length: ${filePath?.length || 0}`);
+        debugLog(`  - filePath starts with '/': ${filePath?.startsWith('/') || false}`);
+        debugLog(`  - filePath is absolute path: ${filePath?.startsWith('/') || false}`);
+        debugLog(`  - Current Working Directory: ${process.cwd()}`);
+        debugLog(`content size: ${content.length} bytes`);
+
         if (!this.fileSnapshots.has(sessionID)) {
             this.fileSnapshots.set(sessionID, new Map());
+            debugLog(`Created new snapshot map for session: ${sessionID}`);
         }
 
         const sessionSnapshots = this.fileSnapshots.get(sessionID);
@@ -153,6 +240,10 @@ class FileIntegrityTracker {
             content,
             timestamp: Date.now()
         });
+
+        debugLog(`Snapshot stored in session map`);
+        debugLog(`Total snapshots in this session: ${sessionSnapshots.size}`);
+        debugLog(`========== saveSnapshot END ==========`);
 
         consolelog(`[FileIntegrity] Snapshot saved: ${sessionID}:${filePath} (${content.length} bytes)`);
     }
@@ -164,9 +255,39 @@ class FileIntegrityTracker {
      * @returns {{content: string, timestamp: number}|null} 저장된 스냅샷
      */
     getSnapshot(sessionID, filePath) {
+        debugLog(`========== getSnapshot START ==========`);
+        debugLog(`sessionID: ${sessionID}`);
+        debugLog(`filePath: ${filePath}`);
+        debugLog(`  - filePath type: ${typeof filePath}`);
+        debugLog(`  - filePath length: ${filePath?.length || 0}`);
+        debugLog(`  - filePath starts with '/': ${filePath?.startsWith('/') || false}`);
+        debugLog(`  - filePath is absolute path: ${filePath?.startsWith('/') || false}`);
+        debugLog(`  - Current Working Directory: ${process.cwd()}`);
+
         const sessionSnapshots = this.fileSnapshots.get(sessionID);
-        if (!sessionSnapshots) return null;
-        return sessionSnapshots.get(filePath) || null;
+        if (!sessionSnapshots) {
+            debugLog(`No snapshot map found for session: ${sessionID}`);
+            debugLog(`========== getSnapshot END (NOT FOUND) ==========`);
+            return null;
+        }
+
+        debugLog(`Snapshot map found, has ${sessionSnapshots.size} snapshots`);
+        const snapshot = sessionSnapshots.get(filePath) || null;
+
+        if (snapshot) {
+            debugLog(`Snapshot FOUND for file`);
+            debugLog(`  Content size: ${snapshot.content.length} bytes`);
+            debugLog(`  Timestamp: ${new Date(snapshot.timestamp).toISOString()}`);
+        } else {
+            debugLog(`Snapshot NOT FOUND for file`);
+            debugLog(`Available snapshots in session:`);
+            for (const [path, snap] of sessionSnapshots.entries()) {
+                debugLog(`  - ${path} (${snap.content.length} bytes)`);
+            }
+        }
+
+        debugLog(`========== getSnapshot END ==========`);
+        return snapshot;
     }
 
 }
@@ -196,12 +317,21 @@ export function getCurrentSession() {
  * @param {string|Buffer} content - 파일 콘텐츠
  */
 export async function trackFileRead(filePath, content) {
+    debugLog(`========== trackFileRead (export wrapper) START ==========`);
+    debugLog(`filePath: ${filePath}`);
+
     const sessionID = fileIntegrityTracker.getCurrentSession();
+    debugLog(`Current session ID: ${sessionID || 'NULL'}`);
+
     if (!sessionID) {
+        debugLog(`ERROR: No current session set, cannot track file read`);
+        debugLog('========== trackFileRead (export wrapper) END ==========');
         consolelog('[FileIntegrity] No current session set, skipping file read tracking');
         return;
     }
+
     await fileIntegrityTracker.trackRead(sessionID, filePath, content);
+    debugLog('========== trackFileRead (export wrapper) END ==========');
 }
 
 /**
@@ -209,11 +339,20 @@ export async function trackFileRead(filePath, content) {
  * @param {string} filePath - 파일 경로
  */
 export async function assertFileIntegrity(filePath) {
+    debugLog(`========== assertFileIntegrity (export wrapper) START ==========`);
+    debugLog(`filePath: ${filePath}`);
+
     const sessionID = fileIntegrityTracker.getCurrentSession();
+    debugLog(`Current session ID: ${sessionID || 'NULL'}`);
+
     if (!sessionID) {
+        debugLog(`ERROR: No current session set`);
+        debugLog('========== assertFileIntegrity (export wrapper) END ==========');
         throw new Error('[FileIntegrity] No current session set');
     }
+
     await fileIntegrityTracker.assertIntegrity(sessionID, filePath);
+    debugLog('========== assertFileIntegrity (export wrapper) END ==========');
 }
 
 /**
@@ -222,12 +361,22 @@ export async function assertFileIntegrity(filePath) {
  * @param {string} content - 파일 원본 내용
  */
 export function saveFileSnapshot(filePath, content) {
+    debugLog(`========== saveFileSnapshot (export wrapper) START ==========`);
+    debugLog(`filePath: ${filePath}`);
+    debugLog(`content size: ${content?.length || 0} bytes`);
+
     const sessionID = fileIntegrityTracker.getCurrentSession();
+    debugLog(`Current session ID: ${sessionID || 'NULL'}`);
+
     if (!sessionID) {
+        debugLog(`ERROR: No current session set, cannot save snapshot`);
+        debugLog('========== saveFileSnapshot (export wrapper) END ==========');
         consolelog('[FileIntegrity] No current session set, skipping snapshot save');
         return;
     }
+
     fileIntegrityTracker.saveSnapshot(sessionID, filePath, content);
+    debugLog('========== saveFileSnapshot (export wrapper) END ==========');
 }
 
 /**
@@ -236,11 +385,27 @@ export function saveFileSnapshot(filePath, content) {
  * @returns {{content: string, timestamp: number}|null} 저장된 스냅샷
  */
 export function getFileSnapshot(filePath) {
+    debugLog(`========== getFileSnapshot (export wrapper) START ==========`);
+    debugLog(`filePath: ${filePath}`);
+
     const sessionID = fileIntegrityTracker.getCurrentSession();
+    debugLog(`Current session ID: ${sessionID || 'NULL'}`);
+
     if (!sessionID) {
+        debugLog(`ERROR: No current session set, returning null`);
+        debugLog('========== getFileSnapshot (export wrapper) END ==========');
         return null;
     }
-    return fileIntegrityTracker.getSnapshot(sessionID, filePath);
+
+    const snapshot = fileIntegrityTracker.getSnapshot(sessionID, filePath);
+    debugLog(`Snapshot result: ${snapshot ? 'FOUND' : 'NOT FOUND'}`);
+    if (snapshot) {
+        debugLog(`  Content size: ${snapshot.content.length} bytes`);
+        debugLog(`  Timestamp: ${new Date(snapshot.timestamp).toISOString()}`);
+    }
+    debugLog('========== getFileSnapshot (export wrapper) END ==========');
+
+    return snapshot;
 }
 
 export { fileIntegrityTracker };

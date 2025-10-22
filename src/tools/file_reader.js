@@ -1,6 +1,24 @@
 import { promises as fs } from 'fs';
-import { resolve } from 'path';
+import { resolve, join, dirname } from 'path';
 import { trackFileRead, saveFileSnapshot } from '../system/file_integrity.js';
+import { DEBUG_LOG_DIR } from '../util/config.js';
+
+// Debug logging configuration
+const ENABLE_DEBUG_LOG = true;
+const LOG_FILE = join(DEBUG_LOG_DIR, 'file_reader.log');
+
+// Debug logging helper
+async function debugLog(message) {
+    if (!ENABLE_DEBUG_LOG) return;
+    try {
+        // 디렉토리가 없으면 생성
+        await fs.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => {});
+        const timestamp = new Date().toISOString();
+        await fs.appendFile(LOG_FILE, `[${timestamp}] ${message}\n`).catch(() => {});
+    } catch (err) {
+        // Ignore logging errors
+    }
+}
 
 // 이 파일은 파일을 읽고 검색하는 모든 보조 기능을 모아 둡니다.
 // Orchestrator가 코드 구조를 파악하고 Verifier가 증거를 수집할 때 공통적으로 사용됩니다.
@@ -17,20 +35,41 @@ import { trackFileRead, saveFileSnapshot } from '../system/file_integrity.js';
  * @returns {Promise<Object>} 결과 객체
  */
 export async function read_file({ filePath }) {
+    debugLog('========== read_file START ==========');
+    debugLog(`Input filePath: "${filePath}"`);
+    debugLog(`  - filePath type: ${typeof filePath}`);
+    debugLog(`  - filePath length: ${filePath?.length || 0}`);
+    debugLog(`  - filePath starts with '/': ${filePath?.startsWith('/') || false}`);
+    debugLog(`  - filePath starts with './': ${filePath?.startsWith('./') || false}`);
+    debugLog(`  - filePath starts with '../': ${filePath?.startsWith('../') || false}`);
+    debugLog(`  - Current Working Directory: ${process.cwd()}`);
+
     try {
         // 경로를 절대경로로 정규화
         const absolutePath = resolve(filePath);
+        debugLog(`Path Resolution:`);
+        debugLog(`  - Input path: "${filePath}"`);
+        debugLog(`  - Resolved absolute path: "${absolutePath}"`);
+        debugLog(`  - Path changed: ${filePath !== absolutePath}`);
+        debugLog(`  - Absolute path starts with '/': ${absolutePath.startsWith('/')}`);
+        debugLog(`  - Absolute path length: ${absolutePath.length}`);
 
+        debugLog(`Reading file...`);
         const content = await fs.readFile(absolutePath, 'utf8');
+        debugLog(`File read successful: ${content.length} bytes`);
+
         const lines = content.split('\n');
 
         // Handle files without trailing newline correctly
         const totalLines = content === '' ? 0 :
             (content.endsWith('\n') ? lines.length - 1 : lines.length);
+        debugLog(`Total lines: ${totalLines}`);
 
         // 2000줄 제한 체크
         const MAX_LINES = 2000;
         if (totalLines > MAX_LINES) {
+            debugLog(`ERROR: File exceeds ${MAX_LINES} lines limit`);
+            debugLog('========== read_file ERROR END ==========');
             return {
                 operation_successful: false,
                 error_message: `File exceeds ${MAX_LINES} lines (actual: ${totalLines} lines). Use read_file_range to read specific sections of this large file.`,
@@ -42,10 +81,16 @@ export async function read_file({ filePath }) {
         }
 
         // 파일 읽기 추적 (절대경로 사용)
+        debugLog(`Tracking file read...`);
         await trackFileRead(absolutePath, content);
+        debugLog(`File read tracked`);
 
         // 스냅샷 저장 (UI 미리보기용)
+        debugLog(`Saving file snapshot...`);
         saveFileSnapshot(absolutePath, content);
+        debugLog(`Snapshot saved`);
+
+        debugLog('========== read_file SUCCESS END ==========');
 
         return {
             operation_successful: true,
@@ -56,6 +101,11 @@ export async function read_file({ filePath }) {
                 (content.endsWith('\n') ? lines.slice(0, -1) : lines)
         };
     } catch (error) {
+        debugLog(`========== read_file EXCEPTION ==========`);
+        debugLog(`Exception caught: ${error.message}`);
+        debugLog(`Stack trace: ${error.stack}`);
+        debugLog('========== read_file EXCEPTION END ==========');
+
         // 에러 시에도 절대경로로 반환
         const absolutePath = resolve(filePath);
         return {
@@ -108,31 +158,67 @@ export const readFileSchema = {
  * @returns {Promise<Object>} 결과 객체
  */
 export async function read_file_range({ filePath, startLine, endLine }) {
+    debugLog('========== read_file_range START ==========');
+    debugLog(`Input parameters:`);
+    debugLog(`  filePath: "${filePath}"`);
+    debugLog(`  - filePath type: ${typeof filePath}`);
+    debugLog(`  - filePath length: ${filePath?.length || 0}`);
+    debugLog(`  - filePath starts with '/': ${filePath?.startsWith('/') || false}`);
+    debugLog(`  - filePath starts with './': ${filePath?.startsWith('./') || false}`);
+    debugLog(`  - filePath starts with '../': ${filePath?.startsWith('../') || false}`);
+    debugLog(`  startLine: ${startLine}`);
+    debugLog(`  endLine: ${endLine}`);
+    debugLog(`  - Current Working Directory: ${process.cwd()}`);
+
     try {
         // 경로를 절대경로로 정규화
         const absolutePath = resolve(filePath);
+        debugLog(`Path Resolution:`);
+        debugLog(`  - Input path: "${filePath}"`);
+        debugLog(`  - Resolved absolute path: "${absolutePath}"`);
+        debugLog(`  - Path changed: ${filePath !== absolutePath}`);
+        debugLog(`  - Absolute path starts with '/': ${absolutePath.startsWith('/')}`);
+        debugLog(`  - Absolute path length: ${absolutePath.length}`);
 
         // 파일 전체를 읽고 범위만 추출
+        debugLog(`Reading file...`);
         const content = await fs.readFile(absolutePath, 'utf8');
+        debugLog(`File read successful: ${content.length} bytes`);
+
         const lines = content.split('\n');
 
         // Handle files without trailing newline correctly
         const totalLines = content === '' ? 0 :
             (content.endsWith('\n') ? lines.length - 1 : lines.length);
 
+        debugLog(`Total lines: ${totalLines}`);
+
         const actualLines = content === '' ? [] :
             (content.endsWith('\n') ? lines.slice(0, -1) : lines);
 
         // 파일 읽기 추적 (절대경로 사용)
+        debugLog(`Tracking file read...`);
         await trackFileRead(absolutePath, content);
+        debugLog(`File read tracked`);
 
         // 스냅샷 저장 (UI 미리보기용)
+        debugLog(`Saving file snapshot...`);
         saveFileSnapshot(absolutePath, content);
+        debugLog(`Snapshot saved`);
 
         // 라인 번호 유효성 검사 (1부터 시작)
-        if (startLine < 1) startLine = 1;
-        if (endLine > totalLines) endLine = totalLines;
+        debugLog(`Validating line range...`);
+        if (startLine < 1) {
+            debugLog(`Adjusted startLine from ${startLine} to 1`);
+            startLine = 1;
+        }
+        if (endLine > totalLines) {
+            debugLog(`Adjusted endLine from ${endLine} to ${totalLines}`);
+            endLine = totalLines;
+        }
         if (startLine > endLine) {
+            debugLog(`ERROR: Invalid line range`);
+            debugLog('========== read_file_range ERROR END ==========');
             return {
                 operation_successful: false,
                 error_message: `Invalid line range: startLine(${startLine}) > endLine(${endLine})`,
@@ -140,12 +226,17 @@ export async function read_file_range({ filePath, startLine, endLine }) {
             };
         }
 
+        debugLog(`Extracting lines ${startLine}-${endLine}...`);
         // 배열 인덱스는 0부터 시작하므로 -1
         const selectedLines = actualLines.slice(startLine - 1, endLine);
+        debugLog(`Extracted ${selectedLines.length} lines`);
+
         const numberedLines = selectedLines.map((line, index) => ({
             line_number: startLine + index,
             line_content: line
         }));
+
+        debugLog('========== read_file_range SUCCESS END ==========');
 
         return {
             operation_successful: true,
@@ -160,6 +251,11 @@ export async function read_file_range({ filePath, startLine, endLine }) {
             file_content: selectedLines.join('\n')
         };
     } catch (error) {
+        debugLog(`========== read_file_range EXCEPTION ==========`);
+        debugLog(`Exception caught: ${error.message}`);
+        debugLog(`Stack trace: ${error.stack}`);
+        debugLog('========== read_file_range EXCEPTION END ==========');
+
         // 에러 시에도 절대경로로 반환
         const absolutePath = resolve(filePath);
         return {

@@ -1,11 +1,30 @@
 // 세션별 실행 기록을 파일로 저장하고 로드하는 모듈
 import fs from 'fs/promises';
+import { promises as fsPromises } from 'fs';
 import { existsSync, mkdirSync } from 'fs';
-import { join } from 'path';
+import { join, resolve, dirname } from 'path';
 import chalk from 'chalk';
 import { formatToolCall, formatToolResult, getToolDisplayName, getToolDisplayConfig } from './tool_registry.js';
+import { DEBUG_LOG_DIR } from '../util/config.js';
 
 const MAX_HISTORY_SESSIONS = 20; // 최대 보관 세션 수
+
+// Debug logging configuration
+const ENABLE_DEBUG_LOG = true;
+const LOG_FILE = join(DEBUG_LOG_DIR, 'session_memory.log');
+
+// Debug logging helper
+async function debugLog(message) {
+    if (!ENABLE_DEBUG_LOG) return;
+    try {
+        // 디렉토리가 없으면 생성
+        await fsPromises.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => {});
+        const timestamp = new Date().toISOString();
+        await fsPromises.appendFile(LOG_FILE, `[${timestamp}] ${message}\n`).catch(() => {});
+    } catch (err) {
+        // Ignore logging errors
+    }
+}
 
 // 현재 작업 디렉토리 기준 세션 디렉토리 경로 생성
 function getSessionDir(sessionID) {
@@ -237,36 +256,57 @@ export function getLastConversationState(sessions) {
  * @returns {Array} UI 히스토리 이벤트 배열
  */
 export function reconstructUIHistory(sessions) {
+    debugLog('========== reconstructUIHistory START ==========');
+    debugLog(`Input sessions: ${sessions?.length || 0}`);
+
     if (!sessions || sessions.length === 0) {
+        debugLog('No sessions to reconstruct, returning empty array');
+        debugLog('========== reconstructUIHistory END ==========');
         return [];
     }
 
     const uiHistory = [];
 
     sessions.forEach((session, sessionIndex) => {
+        debugLog(`---------- Processing session ${sessionIndex + 1}/${sessions.length} ----------`);
+        debugLog(`Session ID: ${session.sessionID || 'unknown'}`);
+        debugLog(`Mission: ${session.mission?.substring(0, 100)}${session.mission?.length > 100 ? '...' : ''}`);
+        debugLog(`Started at: ${session.started_at}`);
+        debugLog(`Has orchestratorConversation: ${!!session.orchestratorConversation}`);
+        debugLog(`Has toolUsageHistory: ${!!session.toolUsageHistory}`);
+        if (session.toolUsageHistory) {
+            debugLog(`toolUsageHistory items: ${session.toolUsageHistory.length}`);
+        }
+
         // 미션 시작
         uiHistory.push({
             type: 'user',
             text: session.mission,
             timestamp: new Date(session.started_at).getTime()
         });
+        debugLog(`Added user mission to uiHistory (index ${uiHistory.length - 1})`);
 
         // orchestratorConversation에서 도구 사용 이벤트 추출
         // 이전 세션까지의 대화 길이를 계산하여 중복 제거
         if (session.orchestratorConversation && session.orchestratorConversation.length > 0) {
             const conversation = session.orchestratorConversation;
+            debugLog(`orchestratorConversation length: ${conversation.length}`);
 
             // 현재 세션의 시작 지점: 이전 세션의 끝 = 이전 세션의 lastOrchestratorSnapshotLength
             let startIndex = 0;
             if (sessionIndex > 0) {
                 startIndex = sessions[sessionIndex - 1].lastOrchestratorSnapshotLength || 0;
+                debugLog(`Previous session lastOrchestratorSnapshotLength: ${startIndex}`);
             }
 
             // 현재 세션의 끝 지점: 현재 세션의 lastOrchestratorSnapshotLength
             const endIndex = session.lastOrchestratorSnapshotLength || conversation.length;
+            debugLog(`Current session lastOrchestratorSnapshotLength: ${endIndex}`);
+            debugLog(`Processing conversation slice [${startIndex}, ${endIndex}]`);
 
             // 현재 세션에서 새로 추가된 대화만 추출
             const newConversation = conversation.slice(startIndex, endIndex);
+            debugLog(`New conversation items to process: ${newConversation.length}`);
 
             for (let i = 0; i < newConversation.length; i++) {
                 const item = newConversation[i];
@@ -338,14 +378,37 @@ export function reconstructUIHistory(sessions) {
                         // edit_file_range 또는 edit_file_replace인 경우 toolUsageHistory에서 fileSnapshot 찾기
                         let fileSnapshot = null;
                         if ((toolName === 'edit_file_range' || toolName === 'edit_file_replace') && session.toolUsageHistory) {
-                            const historyItem = session.toolUsageHistory.find(h =>
-                                (h.toolName === 'edit_file_range' || h.toolName === 'edit_file_replace') &&
-                                h.args?.file_path === args.file_path &&
-                                h.fileSnapshot
-                            );
+                            debugLog(`========== Searching for fileSnapshot ==========`);
+                            debugLog(`toolName: ${toolName}`);
+                            debugLog(`file_path: ${args.file_path}`);
+                            debugLog(`toolUsageHistory items: ${session.toolUsageHistory.length}`);
+
+                            // 절대 경로로 정규화하여 비교
+                            const targetAbsolutePath = resolve(args.file_path);
+                            debugLog(`target absolute path: ${targetAbsolutePath}`);
+
+                            const historyItem = session.toolUsageHistory.find(h => {
+                                if ((h.toolName === 'edit_file_range' || h.toolName === 'edit_file_replace') && h.args?.file_path && h.fileSnapshot) {
+                                    const historyAbsolutePath = resolve(h.args.file_path);
+                                    return historyAbsolutePath === targetAbsolutePath;
+                                }
+                                return false;
+                            });
+
                             if (historyItem) {
                                 fileSnapshot = historyItem.fileSnapshot;
+                                debugLog(`fileSnapshot FOUND: ${fileSnapshot.content.length} bytes`);
+                            } else {
+                                debugLog(`fileSnapshot NOT FOUND`);
+                                debugLog(`Available history items:`);
+                                session.toolUsageHistory.forEach((h, idx) => {
+                                    if (h.toolName === 'edit_file_range' || h.toolName === 'edit_file_replace') {
+                                        const absPath = h.args?.file_path ? resolve(h.args.file_path) : 'N/A';
+                                        debugLog(`  [${idx}] ${h.toolName} - ${h.args?.file_path} (abs: ${absPath}) - hasSnapshot: ${!!h.fileSnapshot}`);
+                                    }
+                                });
                             }
+                            debugLog(`========== fileSnapshot search END ==========`);
                         }
 
                         const toolStartItem = {
@@ -358,6 +421,9 @@ export function reconstructUIHistory(sessions) {
 
                         if (fileSnapshot) {
                             toolStartItem.args = { ...args, fileSnapshot };
+                            debugLog(`fileSnapshot added to toolStartItem.args`);
+                        } else {
+                            debugLog(`No fileSnapshot to add to toolStartItem.args`);
                         }
 
                         uiHistory.push(toolStartItem);

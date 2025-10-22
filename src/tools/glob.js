@@ -1,5 +1,24 @@
 import { glob } from 'glob';
-import { resolve, relative } from 'path';
+import { resolve, relative, join, dirname } from 'path';
+import { promises as fs } from 'fs';
+import { DEBUG_LOG_DIR } from '../util/config.js';
+
+// Debug logging configuration
+const ENABLE_DEBUG_LOG = true;
+const LOG_FILE = join(DEBUG_LOG_DIR, 'glob.log');
+
+// Debug logging helper
+async function debugLog(message) {
+    if (!ENABLE_DEBUG_LOG) return;
+    try {
+        // 디렉토리가 없으면 생성
+        await fs.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => {});
+        const timestamp = new Date().toISOString();
+        await fs.appendFile(LOG_FILE, `[${timestamp}] ${message}\n`).catch(() => {});
+    } catch (err) {
+        // Ignore logging errors
+    }
+}
 
 // 이 파일은 glob 패턴을 사용하여 파일을 검색하는 기능을 제공합니다.
 
@@ -25,8 +44,20 @@ export async function globSearch({
     includeHidden = false,
     maxResults = 1000
 }) {
+    debugLog('========== globSearch START ==========');
+    debugLog(`Input parameters:`);
+    debugLog(`  pattern: "${pattern}"`);
+    debugLog(`  - pattern type: ${typeof pattern}`);
+    debugLog(`  path: ${path === null ? 'null (using CWD)' : `"${path}"`}`);
+    debugLog(`  - path type: ${typeof path}`);
+    debugLog(`  includeHidden: ${includeHidden}`);
+    debugLog(`  maxResults: ${maxResults}`);
+    debugLog(`  - Current Working Directory: ${process.cwd()}`);
+
     try {
         if (typeof pattern !== 'string' || !pattern.trim()) {
+            debugLog(`ERROR: Invalid pattern`);
+            debugLog('========== globSearch ERROR END ==========');
             return {
                 operation_successful: false,
                 error_message: 'glob 패턴이 비어 있습니다.',
@@ -36,7 +67,19 @@ export async function globSearch({
 
         // 작업 디렉토리 설정 - path가 주어지면 사용, 없으면 CWD 사용
         const baseCwd = path || process.cwd();
+        debugLog(`Base CWD decision:`);
+        debugLog(`  - path parameter: ${path === null ? 'null' : `"${path}"`}`);
+        debugLog(`  - process.cwd(): "${process.cwd()}"`);
+        debugLog(`  - Selected baseCwd: "${baseCwd}"`);
+        debugLog(`  - baseCwd starts with '/': ${baseCwd.startsWith('/')}`);
+
         const resolvedCwd = resolve(baseCwd);
+        debugLog(`Path Resolution:`);
+        debugLog(`  - Input baseCwd: "${baseCwd}"`);
+        debugLog(`  - Resolved CWD: "${resolvedCwd}"`);
+        debugLog(`  - Path changed: ${baseCwd !== resolvedCwd}`);
+        debugLog(`  - Resolved CWD starts with '/': ${resolvedCwd.startsWith('/')}`);
+        debugLog(`  - Resolved CWD length: ${resolvedCwd.length}`);
 
         // glob 옵션 설정
         const globOptions = {
@@ -63,25 +106,51 @@ export async function globSearch({
         };
 
         // glob 검색 실행
+        debugLog(`Executing glob search...`);
+        debugLog(`  - Pattern: "${pattern.trim()}"`);
+        debugLog(`  - CWD: "${resolvedCwd}"`);
+        debugLog(`  - Include hidden: ${includeHidden}`);
         const matches = await glob(pattern.trim(), globOptions);
+        debugLog(`Glob search completed:`);
+        debugLog(`  - Total matches: ${matches.length}`);
 
         // 결과 제한
         const limitedMatches = matches.slice(0, maxResults);
         const truncated = matches.length > maxResults;
+        debugLog(`Result limiting:`);
+        debugLog(`  - Max results: ${maxResults}`);
+        debugLog(`  - Actual matches: ${matches.length}`);
+        debugLog(`  - Limited to: ${limitedMatches.length}`);
+        debugLog(`  - Truncated: ${truncated}`);
 
         // 파일 정보 구성
-        const results = limitedMatches.map(filePath => {
+        debugLog(`Processing file paths...`);
+        const results = limitedMatches.map((filePath, index) => {
             const absolutePath = resolve(resolvedCwd, filePath);
+            if (index < 3) {  // 처음 3개만 상세 로깅
+                debugLog(`  File #${index + 1}:`);
+                debugLog(`    - Relative: "${filePath}"`);
+                debugLog(`    - Base: "${resolvedCwd}"`);
+                debugLog(`    - Absolute: "${absolutePath}"`);
+                debugLog(`    - Absolute starts with '/': ${absolutePath.startsWith('/')}`);
+            }
             return {
                 file_path: filePath,
                 absolute_path: absolutePath
             };
         });
+        if (results.length > 3) {
+            debugLog(`  ... and ${results.length - 3} more files`);
+        }
 
         // 수정 시간 순으로 정렬 (최신 파일 우선)
         // stat 정보를 이용한 정렬은 추가 fs.stat 호출이 필요하므로
         // 기본적으로는 알파벳 순으로 정렬
+        debugLog(`Sorting results...`);
         results.sort((a, b) => a.file_path.localeCompare(b.file_path));
+        debugLog(`Results sorted alphabetically`);
+
+        debugLog('========== globSearch SUCCESS END ==========');
 
         return {
             operation_successful: true,
@@ -94,6 +163,10 @@ export async function globSearch({
         };
 
     } catch (error) {
+        debugLog(`========== globSearch EXCEPTION ==========`);
+        debugLog(`Exception caught: ${error.message}`);
+        debugLog(`Stack trace: ${error.stack}`);
+        debugLog('========== globSearch EXCEPTION END ==========');
         return {
             operation_successful: false,
             error_message: error.message,
