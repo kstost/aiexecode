@@ -24,9 +24,9 @@ async function debugLog(message) {
     if (!ENABLE_DEBUG_LOG) return;
     try {
         // 디렉토리가 없으면 생성
-        await fs.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => {});
+        await fs.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => { });
         const timestamp = new Date().toISOString();
-        await fs.appendFile(LOG_FILE, `[${timestamp}] ${message}\n`).catch(() => {});
+        await fs.appendFile(LOG_FILE, `[${timestamp}] ${message}\n`).catch(() => { });
     } catch (err) {
         // Ignore logging errors
     }
@@ -56,7 +56,7 @@ function CodeExecutionDisplay({ item, hasFollowingResult }) {
     const languageName = item.language.charAt(0).toUpperCase() + item.language.slice(1);
 
     // code_execution 다음에 code_result가 오면 marginBottom 0
-    const marginBottom = hasFollowingResult ? 0 : 1;
+    const marginBottom = 0;//hasFollowingResult ? 0 : 1;
 
     return React.createElement(Box, { flexDirection: "column", marginBottom },
         React.createElement(Box, { flexDirection: "row", marginBottom: 0 },
@@ -301,8 +301,9 @@ function StandardDisplay({ item, isPending, hasFollowingResult }) {
 
     // tool_start는 다음에 tool_result가 있으면 marginBottom 0, 없으면 1
     // tool_result는 marginTop 0
-    const marginBottom = (type === 'tool_start' && hasFollowingResult) ? 0 : 1;
-    const marginTop = type === 'tool_result' ? 0 : undefined;
+    // const marginBottom = (type === 'tool_start' && hasFollowingResult) ? 0 : 1;
+    const marginBottom = 1;//(type === 'tool_start' && hasFollowingResult) ? 0 : 1;
+    const marginTop = 0;//type === 'tool_result' ? 0 : undefined;
 
     if (false) {
         return React.createElement(Box, { flexDirection: "row", marginBottom, marginTop },
