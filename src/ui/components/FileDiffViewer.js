@@ -291,7 +291,7 @@ export function FileDiffViewer({ filePath, startLine, endLine, oldContent, newCo
         debugLog(`  Unchanged: ${unchangedCount}`);
         debugLog(`  afterEndLine: ${afterEndLine}`);
 
-        const element = React.createElement(Box, { flexDirection: 'column', width: '100%', marginBottom: 1 },
+        const element = React.createElement(Box, { flexDirection: 'column', width: '95%', marginBottom: 2 },
             React.createElement(Box, { flexDirection: 'column', borderStyle: 'single', borderColor: '#4a4a4a' },
                 // Header
                 React.createElement(Box, { marginBottom: 1 },
