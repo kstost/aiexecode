@@ -36,7 +36,7 @@ export const LoadingIndicator = memo(function LoadingIndicator({ thought, curren
 
     return React.createElement(Box, {
         flexDirection: "column",
-        marginBottom: 1
+        marginBottom: 0
     },
         thought && React.createElement(Box, null,
             React.createElement(SpinnerFrame),
