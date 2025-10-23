@@ -309,6 +309,10 @@ export async function edit_file_replace({ file_path, old_string, new_string, rep
 
         // 파일 스냅샷 저장 (UI에서 diff 표시를 위해 필요)
         debugLog(`Saving file snapshot for UI...`);
+        const fileSnapshot = {
+            content: originalContent,
+            timestamp: Date.now()
+        };
         saveFileSnapshot(absolutePath, originalContent);
         debugLog(`Snapshot saved`);
 
@@ -459,6 +463,7 @@ export async function edit_file_replace({ file_path, old_string, new_string, rep
             absolute_file_path: absolutePath,
             replacement_count: replacementCount,
             replace_all_mode: replace_all,
+            fileSnapshot: fileSnapshot,  // UI 히스토리에서 정확한 diff 표시를 위해 편집 전 스냅샷 포함
             file_stats: {
                 updated_content: newContent
             },
@@ -560,6 +565,10 @@ export async function edit_file_range({ file_path, start_line, end_line, new_con
 
         // 파일 스냅샷 저장 (UI에서 diff 표시를 위해 필요)
         debugLog(`Saving file snapshot for UI...`);
+        const fileSnapshot = {
+            content: originalContent,
+            timestamp: Date.now()
+        };
         saveFileSnapshot(absolutePath, originalContent);
         debugLog(`Snapshot saved`);
 
@@ -665,6 +674,7 @@ export async function edit_file_range({ file_path, start_line, end_line, new_con
             operation_type: operationType,
             target_file_path: absolutePath,
             absolute_file_path: absolutePath,
+            fileSnapshot: fileSnapshot,  // UI 히스토리에서 정확한 diff 표시를 위해 편집 전 스냅샷 포함
             file_stats: {
                 updated_content: newFileContent  // 수정 후 전체 파일 내용
             }

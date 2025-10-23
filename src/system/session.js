@@ -146,8 +146,11 @@ async function processToolCall(name, argument, toolMap, sessionID) {
         }
     }
 
-    // 승인이 필요한 도구인지 확인
-    if (requiresApproval(name)) {
+    // 승인이 필요한 도구인지 확인 (args 전달하여 실패 여부 판단)
+    const approvalCheck = requiresApproval(name, argument);
+
+    // 승인이 필요한 경우
+    if (approvalCheck === true) {
         const approved = await requestApproval(name, argument);
         if (!approved) {
             const errorResult = {
@@ -169,6 +172,11 @@ async function processToolCall(name, argument, toolMap, sessionID) {
     }
 
     logToolCall(name, argument);
+
+    // 승인이 스킵되는 경우 (확실히 실패할 것으로 예상) - 도구 호출 메시지 다음에 출력
+    if (approvalCheck && approvalCheck.skipApproval) {
+        logInfo(`Tool approval skipped: ${approvalCheck.reason}`);
+    }
 
     // 도구가 toolMap에 없는 경우 처리
     if (!toolMap[name] || typeof toolMap[name] !== 'function') {
@@ -229,8 +237,11 @@ async function processCodeExecution(name, argument, toolMap) {
 
     debugLog(`[processCodeExecution] Processing ${codeType} execution`);
 
-    // 승인이 필요한 도구인지 확인
-    if (requiresApproval(name)) {
+    // 승인이 필요한 도구인지 확인 (args 전달하여 실패 여부 판단)
+    const approvalCheck = requiresApproval(name, argument);
+
+    // 승인이 필요한 경우
+    if (approvalCheck === true) {
         const approved = await requestApproval(name, argument);
         if (!approved) {
             logCodeExecution(codeType, codeContent);
@@ -246,6 +257,11 @@ async function processCodeExecution(name, argument, toolMap) {
     }
 
     logCodeExecution(codeType, codeContent);
+
+    // 승인이 스킵되는 경우 (확실히 실패할 것으로 예상) - 코드 실행 메시지 다음에 출력
+    if (approvalCheck && approvalCheck.skipApproval) {
+        logInfo(`Tool approval skipped: ${approvalCheck.reason}`);
+    }
 
     // 도구가 toolMap에 없는 경우 처리
     if (!toolMap[name] || typeof toolMap[name] !== 'function') {

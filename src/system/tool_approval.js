@@ -3,6 +3,8 @@
  */
 
 import { uiEvents } from './ui_events.js';
+import { getFileSnapshot } from './file_integrity.js';
+import { resolve } from 'path';
 
 // 승인이 필요한 도구 목록
 const APPROVAL_REQUIRED_TOOLS = new Set([
@@ -31,12 +33,67 @@ export function registerMCPTool(toolName, server, description) {
 }
 
 /**
- * 도구가 승인이 필요한지 확인
+ * 도구 실행이 확실히 실패할지 미리 검증
+ * 실패가 확실한 경우 {willFail: true, reason: string} 반환
+ * 성공 가능한 경우 {willFail: false} 반환
  */
-export function requiresApproval(toolName) {
+function willDefinitelyFail(toolName, args) {
+    // edit_file_replace: 파일이 읽히지 않았거나 old_string이 없는 경우
+    if (toolName === 'edit_file_replace') {
+        try {
+            const absolutePath = resolve(args.file_path);
+            const snapshot = getFileSnapshot(absolutePath);
+            const content = snapshot?.content || '';
+
+            // 파일이 읽히지 않았거나 비어있는 경우
+            if (!content) {
+                return { willFail: true, reason: 'File not read yet or empty' };
+            }
+
+            // old_string이 파일에 없는 경우
+            const oldString = args.old_string || '';
+            if (!content.includes(oldString)) {
+                return { willFail: true, reason: 'old_string not found in file' };
+            }
+        } catch (error) {
+            // 검증 중 에러 발생시 실패할 것으로 판단
+            return { willFail: true, reason: `Validation error: ${error.message}` };
+        }
+    }
+
+    // edit_file_range: 파일이 읽히지 않은 경우
+    if (toolName === 'edit_file_range') {
+        try {
+            const absolutePath = resolve(args.file_path);
+            const snapshot = getFileSnapshot(absolutePath);
+
+            // 파일이 읽히지 않은 경우
+            if (!snapshot?.content) {
+                return { willFail: true, reason: 'File not read yet' };
+            }
+        } catch (error) {
+            return { willFail: true, reason: `Validation error: ${error.message}` };
+        }
+    }
+
+    return { willFail: false };
+}
+
+/**
+ * 도구가 승인이 필요한지 확인
+ * @returns {boolean|{skipApproval: true, reason: string}} 승인 필요 여부 또는 스킵 정보
+ */
+export function requiresApproval(toolName, args = {}) {
     if (alwaysAllowedTools.has(toolName)) {
         return false;
     }
+
+    // 확실히 실패할 경우 승인 불필요 (바로 실행하여 에러 반환)
+    const failCheck = willDefinitelyFail(toolName, args);
+    if (failCheck.willFail) {
+        return { skipApproval: true, reason: failCheck.reason };
+    }
+
     // MCP 도구는 항상 승인이 필요
     if (MCP_TOOLS.has(toolName)) {
         return true;

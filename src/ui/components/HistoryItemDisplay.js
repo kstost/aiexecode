@@ -11,22 +11,74 @@ import { renderMarkdown } from '../utils/markdownRenderer.js';
 import { FileDiffViewer } from './FileDiffViewer.js';
 import { getToolDisplayName, formatToolCall } from '../../system/tool_registry.js';
 import { getFileSnapshot } from '../../system/file_integrity.js';
-import { promises as fs } from 'fs';
+import fs from 'fs';
 import { resolve, join, dirname } from 'path';
 import { DEBUG_LOG_DIR } from '../../util/config.js';
+import { createHash } from 'crypto';
 
 // Debug logging configuration
 const ENABLE_DEBUG_LOG = true;
 const LOG_FILE = join(DEBUG_LOG_DIR, 'ui_history_display.log');
+const OLDSTRING_LOG_FILE = join(DEBUG_LOG_DIR, 'oldstring.txt');
 
 // Debug logging helper
-async function debugLog(message) {
+function debugLog(message) {
     if (!ENABLE_DEBUG_LOG) return;
     try {
         // 디렉토리가 없으면 생성
-        await fs.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => { });
+        const dir = dirname(LOG_FILE);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
         const timestamp = new Date().toISOString();
-        await fs.appendFile(LOG_FILE, `[${timestamp}] ${message}\n`).catch(() => { });
+        fs.appendFileSync(LOG_FILE, `[${timestamp}] ${message}\n`);
+    } catch (err) {
+        // Ignore logging errors
+    }
+}
+
+// Evidence logging for old_string NOT FOUND issues
+function logOldStringEvidence(evidence) {
+    try {
+        const dir = dirname(OLDSTRING_LOG_FILE);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        const timestamp = new Date().toISOString();
+        const separator = '\n' + '='.repeat(80) + '\n';
+
+        let logEntry = `${separator}[${timestamp}] OLD_STRING NOT FOUND EVIDENCE\n${separator}`;
+        logEntry += `File Path: ${evidence.filePath}\n`;
+        logEntry += `Snapshot Source: ${evidence.snapshotSource}\n`;
+        logEntry += `Snapshot Timestamp: ${evidence.snapshotTimestamp || 'N/A'}\n`;
+        logEntry += `\nSnapshot Content Hash: ${evidence.snapshotHash}\n`;
+        logEntry += `Snapshot Content Length: ${evidence.snapshotLength} bytes\n`;
+        logEntry += `\nOld String Hash: ${evidence.oldStringHash}\n`;
+        logEntry += `Old String Length: ${evidence.oldStringLength} bytes\n`;
+        logEntry += `\nSearch Result: ${evidence.searchResult}\n`;
+
+        if (evidence.prefixMatch !== undefined) {
+            logEntry += `Prefix (20 chars) Match: ${evidence.prefixMatch}\n`;
+        }
+
+        if (evidence.normalizedMatch !== undefined) {
+            logEntry += `Normalized (CRLF->LF) Match: ${evidence.normalizedMatch}\n`;
+        }
+
+        logEntry += `\n--- Snapshot Content (first 500 chars) ---\n`;
+        logEntry += evidence.snapshotPreview + '\n';
+        logEntry += `\n--- Old String (first 500 chars) ---\n`;
+        logEntry += evidence.oldStringPreview + '\n';
+
+        if (evidence.contextAroundPrefix) {
+            logEntry += `\n--- Context Around Prefix Match ---\n`;
+            logEntry += evidence.contextAroundPrefix + '\n';
+        }
+
+        logEntry += `\n--- Result Args ---\n`;
+        logEntry += JSON.stringify(evidence.resultArgs, null, 2) + '\n';
+
+        fs.appendFileSync(OLDSTRING_LOG_FILE, logEntry);
     } catch (err) {
         // Ignore logging errors
     }
@@ -198,19 +250,41 @@ function StandardDisplay({ item, isPending, hasFollowingResult }) {
             diffData = { loaded: true, hasContent: false };
         } else {
             try {
-                // 우선 메모리의 getFileSnapshot 시도 (절대 경로 사용), 없으면 히스토리 아이템에 저장된 스냅샷 사용
+                // 스냅샷 우선순위: 히스토리 저장 스냅샷 > 메모리 스냅샷
+                // (히스토리 스냅샷이 편집 당시의 정확한 파일 상태를 보존)
                 debugLog('Attempting to get file snapshot...');
-                let snapshot = getFileSnapshot(absolutePath);
-                debugLog(`Snapshot from getFileSnapshot: ${snapshot ? 'FOUND' : 'NOT FOUND'}`);
+                let snapshot = null;
+                let snapshotSource = 'none';
 
-                // 히스토리 복원 시: item.args 또는 effectiveArgs에 fileSnapshot이 있을 수 있음
-                if (!snapshot && item.args?.fileSnapshot) {
-                    debugLog('Using fileSnapshot from item.args');
-                    snapshot = item.args.fileSnapshot;
-                } else if (!snapshot && effectiveArgs?.fileSnapshot) {
-                    debugLog('Using fileSnapshot from effectiveArgs');
-                    snapshot = effectiveArgs.fileSnapshot;
+                // 1순위: result에 저장된 fileSnapshot (가장 정확함)
+                if (originalResult?.fileSnapshot) {
+                    snapshot = originalResult.fileSnapshot;
+                    snapshotSource = 'result.fileSnapshot';
+                    debugLog('Using fileSnapshot from result.fileSnapshot');
                 }
+                // 2순위: item.args의 fileSnapshot
+                else if (item.args?.fileSnapshot) {
+                    snapshot = item.args.fileSnapshot;
+                    snapshotSource = 'item.args.fileSnapshot';
+                    debugLog('Using fileSnapshot from item.args');
+                }
+                // 3순위: effectiveArgs의 fileSnapshot
+                else if (effectiveArgs?.fileSnapshot) {
+                    snapshot = effectiveArgs.fileSnapshot;
+                    snapshotSource = 'effectiveArgs.fileSnapshot';
+                    debugLog('Using fileSnapshot from effectiveArgs');
+                }
+                // 4순위: 메모리의 현재 스냅샷 (최신 파일 상태, 정확하지 않을 수 있음)
+                else {
+                    snapshot = getFileSnapshot(absolutePath);
+                    if (snapshot) {
+                        snapshotSource = 'memory (current)';
+                        debugLog('WARNING: Using current memory snapshot - may not match edit time');
+                    }
+                }
+
+                debugLog(`Snapshot source: ${snapshotSource}`);
+                debugLog(`Snapshot found: ${snapshot ? 'YES' : 'NO'}`);
 
                 const content = snapshot?.content || '';
                 debugLog(`Content length: ${content.length} bytes`);
@@ -234,12 +308,54 @@ function StandardDisplay({ item, isPending, hasFollowingResult }) {
                         debugLog(`Snapshot first 200 chars: ${JSON.stringify(content.substring(0, 200))}`);
                         debugLog(`old_string first 100 chars: ${JSON.stringify(effectiveArgs.old_string.substring(0, 100))}`);
 
+                        // 증거 수집을 위한 상세 분석
+                        const snapshotHash = createHash('sha256').update(content).digest('hex');
+                        const oldStringHash = createHash('sha256').update(effectiveArgs.old_string).digest('hex');
+
                         // 부분 문자열 검색
+                        let prefixIndex = -1;
+                        let contextAroundPrefix = null;
                         if (effectiveArgs.old_string.length > 20) {
                             const prefix = effectiveArgs.old_string.substring(0, 20);
-                            const prefixIndex = content.indexOf(prefix);
+                            prefixIndex = content.indexOf(prefix);
                             debugLog(`First 20 chars of old_string found at: ${prefixIndex}`);
+
+                            if (prefixIndex !== -1) {
+                                const contextStart = Math.max(0, prefixIndex - 100);
+                                const contextEnd = Math.min(content.length, prefixIndex + 200);
+                                contextAroundPrefix = content.substring(contextStart, contextEnd);
+                            }
                         }
+
+                        // 줄바꿈 정규화 후 재검색
+                        const normalizedContent = content.replace(/\r\n/g, '\n');
+                        const normalizedOldString = effectiveArgs.old_string.replace(/\r\n/g, '\n');
+                        const normalizedMatch = normalizedContent.indexOf(normalizedOldString) !== -1;
+
+                        // 증거 로그 수집
+                        const evidence = {
+                            filePath: absolutePath,
+                            snapshotSource: snapshotSource,
+                            snapshotTimestamp: snapshot?.timestamp,
+                            snapshotHash: snapshotHash.substring(0, 16) + '...',
+                            snapshotLength: content.length,
+                            oldStringHash: oldStringHash.substring(0, 16) + '...',
+                            oldStringLength: effectiveArgs.old_string.length,
+                            searchResult: 'NOT FOUND',
+                            prefixMatch: prefixIndex !== -1 ? `Yes (at index ${prefixIndex})` : 'No',
+                            normalizedMatch: normalizedMatch ? 'Yes' : 'No',
+                            snapshotPreview: content.substring(0, 500),
+                            oldStringPreview: effectiveArgs.old_string.substring(0, 500),
+                            contextAroundPrefix: contextAroundPrefix,
+                            resultArgs: {
+                                operation_successful: originalResult?.operation_successful,
+                                hasFileSnapshot: !!originalResult?.fileSnapshot,
+                                replace_all: effectiveArgs.replace_all
+                            }
+                        };
+
+                        // oldstring.txt에 증거 기록
+                        logOldStringEvidence(evidence);
 
                         diffData = {
                             loaded: true,
