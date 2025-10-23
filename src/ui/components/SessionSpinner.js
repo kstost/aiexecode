@@ -54,14 +54,9 @@ export const SessionSpinner = memo(function SessionSpinner({ isRunning, message 
         return () => clearInterval(timer);
     }, [isRunning]);
 
-    // Always render a Box with fixed height to prevent layout shift
+    // Don't render anything when not running to avoid taking up space
     if (!isRunning) {
-        return React.createElement(Box, {
-            height: 1,
-            paddingLeft: 1,
-            paddingY: 0,
-            marginBottom: 0
-        });
+        return null;
     }
 
     return React.createElement(SpinnerContent, {

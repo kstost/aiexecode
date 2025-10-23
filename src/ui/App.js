@@ -541,34 +541,52 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
     }
 
     return React.createElement(Box, { flexDirection: "column", padding: 1 },
-        // Static items: 한 번 렌더링되면 다시는 재렌더링되지 않음
-        React.createElement(Static, { items: staticItems }, (item) => item),
+        // History area (grows to fill available space, shrinks when needed)
+        React.createElement(Box, {
+            flexDirection: "column",
+            flexGrow: 1,
+            flexShrink: 1,
+            overflow: 'hidden'  // Prevent history from pushing out fixed elements
+        },
+            // Static items: 한 번 렌더링되면 다시는 재렌더링되지 않음
+            React.createElement(Static, { items: staticItems }, (item) => item),
 
-        // Pending items (currently being processed)
-        pendingHistory.length > 0 && React.createElement(Box, { flexDirection: "column" },
-            pendingHistory.map((item, index) => renderHistoryItem(item, index, 'pending', pendingHistory))
+            // Pending items (currently being processed)
+            pendingHistory.length > 0 && React.createElement(Box, {
+                flexDirection: "column",
+                marginTop: 1  // Add spacing between static and pending items
+            },
+                pendingHistory.map((item, index) => renderHistoryItem(item, index, 'pending', pendingHistory))
+            )
         ),
 
-        approvalRequest ? React.createElement(ToolApprovalPrompt, {
-            toolName: approvalRequest.toolName,
-            args: approvalRequest.args,
-            mcpToolInfo: approvalRequest.mcpToolInfo || null,
-            onDecision: handleApprovalDecision
-        }) : null,
+        // Fixed input/control area (does not shrink, stays at bottom)
+        React.createElement(Box, {
+            flexDirection: "column",
+            flexShrink: 0,
+            marginTop: 1  // Spacing between history and input area
+        },
+            approvalRequest ? React.createElement(ToolApprovalPrompt, {
+                toolName: approvalRequest.toolName,
+                args: approvalRequest.args,
+                mcpToolInfo: approvalRequest.mcpToolInfo || null,
+                onDecision: handleApprovalDecision
+            }) : null,
 
-        !approvalRequest && React.createElement(SessionSpinner, {
-            isRunning: isSessionRunning,
-            message: sessionMessage
-        }),
-        !approvalRequest && React.createElement(InputPrompt, {
-            buffer,
-            onSubmit: handleSubmit,
-            onClearScreen: handleClearScreen,
-            onExit: onExit,
-            commands,
-            focus: true,
-            isSessionRunning
-        }),
-        React.createElement(MemoizedFooter, { model: currentModel, reasoningEffort })
+            !approvalRequest && React.createElement(SessionSpinner, {
+                isRunning: isSessionRunning,
+                message: sessionMessage
+            }),
+            !approvalRequest && React.createElement(InputPrompt, {
+                buffer,
+                onSubmit: handleSubmit,
+                onClearScreen: handleClearScreen,
+                onExit: onExit,
+                commands,
+                focus: true,
+                isSessionRunning
+            }),
+            React.createElement(MemoizedFooter, { model: currentModel, reasoningEffort })
+        )
     );
 }

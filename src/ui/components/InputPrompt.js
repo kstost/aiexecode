@@ -280,7 +280,9 @@ function InputPromptComponent({ buffer, onSubmit, onClearScreen, onExit, command
             paddingX: 1,
             flexDirection: "row",
             alignItems: "flex-start",
-            minHeight: 3
+            minHeight: 3,
+            maxHeight: 12,  // Limit input height to prevent pushing other elements
+            flexShrink: 0   // Prevent input from being squeezed by other elements
             // Don't set explicit width - let Ink calculate it
         },
             React.createElement(Text, { color: theme.text.accent }, '> '),
