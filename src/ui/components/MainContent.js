@@ -33,7 +33,8 @@ export const MainContent = React.memo(function MainContent() {
                 key: item.id || `history-${index}`,
                 item,
                 isPending: false,
-                terminalWidth: mainAreaWidth
+                terminalWidth: mainAreaWidth,
+                nextItem: history[index + 1]
             })
         )
     ];
@@ -56,7 +57,8 @@ export const MainContent = React.memo(function MainContent() {
                     key: `pending-${index}`,
                     item,
                     isPending: true,
-                    terminalWidth: mainAreaWidth
+                    terminalWidth: mainAreaWidth,
+                    nextItem: pendingHistoryItems[index + 1]
                 })
             )
         )

@@ -113,11 +113,16 @@ export function formatToolCall(toolName, args) {
 export function formatToolResult(toolName, result) {
     const config = getToolDisplayConfig(toolName);
 
+    // Extract the actual data to format
+    const dataToFormat = result.originalResult || result.stdout || result;
+
+    // Handle error results: if operation_successful is false, show error_message
+    if (dataToFormat && typeof dataToFormat === 'object' && dataToFormat.operation_successful === false) {
+        return dataToFormat.error_message || 'Operation failed';
+    }
+
     if (config.format_tool_result && typeof config.format_tool_result === 'function') {
         try {
-            // result는 { stdout, originalResult } 형태
-            // originalResult가 있으면 사용, 없으면 stdout 사용
-            const dataToFormat = result.originalResult || result.stdout || result;
             return config.format_tool_result(dataToFormat);
         } catch (e) {
             return result.stdout || JSON.stringify(result);

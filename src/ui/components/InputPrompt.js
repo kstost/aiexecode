@@ -268,7 +268,7 @@ function InputPromptComponent({ buffer, onSubmit, onClearScreen, onExit, command
     const cursorVisualRow = cursorVisualRowAbsolute - scrollVisualRow;
     const bufferTextLength = useMemo(() => buffer.text.length, [buffer.text]);
 
-    return React.createElement(Box, { flexDirection: "column", width: "100%" },
+    return React.createElement(Box, { flexDirection: "column", flexGrow: 1 },
         ctrlCPressedOnce && React.createElement(Text, { color: theme.status.warning },
             'Press Ctrl+C again to exit.'),
         ctrlDPressedOnce && React.createElement(Text, { color: theme.status.warning },

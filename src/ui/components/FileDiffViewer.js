@@ -139,8 +139,18 @@ function detectLanguage(filePath) {
  * Parse content lines - no file reading
  */
 function parseContentLines(oldContent, newContent) {
-    const beforeLines = oldContent ? oldContent.split('\n') : [];
-    const afterLines = newContent ? newContent.split('\n') : [];
+    // Handle null, undefined
+    // Note: empty string '' should become [''] (one empty line), not []
+    let beforeLines = [];
+    let afterLines = [];
+    
+    if (oldContent !== null && oldContent !== undefined) {
+        beforeLines = oldContent.split('\n');
+    }
+    
+    if (newContent !== null && newContent !== undefined) {
+        afterLines = newContent.split('\n');
+    }
 
     return {
         beforeLines,
@@ -153,11 +163,37 @@ function parseContentLines(oldContent, newContent) {
  * For single-line changes, uses word-level diff for better visualization
  */
 function calculateDiff(beforeLines, afterLines) {
+    // Handle edge case: both empty
+    if (beforeLines.length === 0 && afterLines.length === 0) {
+        return [];
+    }
+
+    // Handle edge case: only before is empty (all additions)
+    if (beforeLines.length === 0) {
+        return afterLines.map(line => ({ 
+            type: 'added', 
+            newLine: line, 
+            isWordDiff: false 
+        }));
+    }
+
+    // Handle edge case: only after is empty (all deletions)
+    if (afterLines.length === 0) {
+        return beforeLines.map(line => ({ 
+            type: 'removed', 
+            oldLine: line, 
+            isWordDiff: false 
+        }));
+    }
+
     const beforeText = beforeLines.join('\n');
     const afterText = afterLines.join('\n');
 
-    // Special case: if both are single lines or contain no newlines, use word-level diff
-    const isSingleLineDiff = beforeLines.length === 1 && afterLines.length === 1;
+    // Special case: if both are single lines with no newlines and relatively short, use word-level diff
+    // This provides better visualization for small inline changes
+    const isSingleLineDiff = beforeLines.length === 1 && afterLines.length === 1 && 
+                             !beforeText.includes('\n') && !afterText.includes('\n') &&
+                             beforeText.length < 200 && afterText.length < 200;
 
     if (isSingleLineDiff) {
         const wordDiff = diffWords(beforeText, afterText);
@@ -165,11 +201,11 @@ function calculateDiff(beforeLines, afterLines) {
 
         for (const change of wordDiff) {
             if (change.added) {
-                result.push({ type: 'added', newLine: change.value });
+                result.push({ type: 'added', newLine: change.value, isWordDiff: true });
             } else if (change.removed) {
-                result.push({ type: 'removed', oldLine: change.value });
+                result.push({ type: 'removed', oldLine: change.value, isWordDiff: true });
             } else {
-                result.push({ type: 'unchanged', oldLine: change.value, newLine: change.value });
+                result.push({ type: 'unchanged', oldLine: change.value, newLine: change.value, isWordDiff: true });
             }
         }
 
@@ -182,18 +218,25 @@ function calculateDiff(beforeLines, afterLines) {
 
     for (const change of changes) {
         const lines = change.value.split('\n');
-        // Remove trailing empty line if exists
-        if (lines[lines.length - 1] === '') {
+        
+        // Remove trailing empty line only if it's the result of split on text ending with \n
+        // This happens because "line1\nline2\n".split('\n') gives ["line1", "line2", ""]
+        if (lines.length > 0 && lines[lines.length - 1] === '' && change.value.endsWith('\n')) {
             lines.pop();
+        }
+
+        // Handle empty changes (shouldn't happen, but defensive programming)
+        if (lines.length === 0) {
+            continue;
         }
 
         for (const line of lines) {
             if (change.added) {
-                result.push({ type: 'added', newLine: line });
+                result.push({ type: 'added', newLine: line, isWordDiff: false });
             } else if (change.removed) {
-                result.push({ type: 'removed', oldLine: line });
+                result.push({ type: 'removed', oldLine: line, isWordDiff: false });
             } else {
-                result.push({ type: 'unchanged', oldLine: line, newLine: line });
+                result.push({ type: 'unchanged', oldLine: line, newLine: line, isWordDiff: false });
             }
         }
     }
@@ -211,32 +254,37 @@ function InlineDiffLine({ lineNum, parts, prefix, lineType }) {
     const bgColor = lineType === 'removed' ? '#692121ff' : lineType === 'added' ? '#216931ff' : undefined;
     const lineNumColor = lineType === 'removed' ? '#c0a6a6ff' : lineType === 'added' ? '#9fbca5ff' : '#898989ff';
 
-    return React.createElement(Box, { backgroundColor: bgColor, width: '100%' },
+    // Filter out parts with null or undefined text, but keep empty strings (they're valid)
+    const validParts = parts.filter(part => part.text !== null && part.text !== undefined);
+
+    return React.createElement(Box, { backgroundColor: bgColor },
         React.createElement(Text, { color: lineNumColor }, lineNumStr),
         React.createElement(Text, { color: '#ffffff' }, `${prefix} `),
-        ...parts.map((part, idx) => {
-            // Highlight changed parts with different background
-            if (part.type === 'removed') {
-                return React.createElement(Text, {
-                    key: idx,
-                    color: '#ffffff',
-                    backgroundColor: '#8b0000ff',
-                    bold: true
-                }, part.text);
-            } else if (part.type === 'added') {
-                return React.createElement(Text, {
-                    key: idx,
-                    color: '#ffffff',
-                    backgroundColor: '#006400ff',
-                    bold: true
-                }, part.text);
-            } else {
-                return React.createElement(Text, {
-                    key: idx,
-                    color: '#ffffff'
-                }, part.text);
-            }
-        })
+        React.createElement(Box, { flexDirection: 'row' },
+            ...validParts.map((part, idx) => {
+                // Highlight changed parts with different background
+                if (part.type === 'removed') {
+                    return React.createElement(Text, {
+                        key: idx,
+                        color: '#ffffff',
+                        backgroundColor: '#8b0000ff',
+                        bold: true
+                    }, part.text || '');
+                } else if (part.type === 'added') {
+                    return React.createElement(Text, {
+                        key: idx,
+                        color: '#ffffff',
+                        backgroundColor: '#006400ff',
+                        bold: true
+                    }, part.text || '');
+                } else {
+                    return React.createElement(Text, {
+                        key: idx,
+                        color: '#ffffff'
+                    }, part.text || '');
+                }
+            })
+        )
     );
 }
 
@@ -250,44 +298,41 @@ function UnifiedDiffLine({ oldLineNum, newLineNum, content, type, language }) {
 
     if (type === 'removed') {
         // Removed lines: show old line number only
-        lineNumStr = oldLineNum !== null ? `${String(oldLineNum).padStart(4, ' ')} ` : '     ';
+        lineNumStr = oldLineNum !== null && oldLineNum !== undefined 
+            ? `${String(oldLineNum).padStart(4, ' ')} ` 
+            : '     ';
     } else if (type === 'added') {
         // Added lines: show new line number only
-        lineNumStr = newLineNum !== null ? `${String(newLineNum).padStart(4, ' ')} ` : '     ';
+        lineNumStr = newLineNum !== null && newLineNum !== undefined 
+            ? `${String(newLineNum).padStart(4, ' ')} ` 
+            : '     ';
     } else {
         // Unchanged lines: show new line number (the line number in the result file)
-        lineNumStr = newLineNum !== null ? `${String(newLineNum).padStart(4, ' ')} ` : '     ';
+        lineNumStr = newLineNum !== null && newLineNum !== undefined 
+            ? `${String(newLineNum).padStart(4, ' ')} ` 
+            : '     ';
     }
 
     // Get prefix and content based on type
-    let prefix = ' ';
-    let contentStr = '';
-
-    if (type === 'removed') {
-        prefix = '-';
-        contentStr = content || '';
-    } else if (type === 'added') {
-        prefix = '+';
-        contentStr = content || '';
-    } else {
-        prefix = ' ';
-        contentStr = content || '';
-    }
+    // Handle null/undefined content gracefully
+    const contentStr = (content !== null && content !== undefined) ? content : '';
+    const prefix = type === 'removed' ? '-' : (type === 'added' ? '+' : ' ');
 
     // Determine colors based on line type
+    // Keep line number and content separate to allow different colors
     if (type === 'removed') {
-        return React.createElement(Box, { backgroundColor: '#692121ff', width: '100%' },
+        return React.createElement(Box, { backgroundColor: '#692121ff' },
             React.createElement(Text, { color: '#c0a6a6ff' }, lineNumStr),
             React.createElement(Text, { color: '#ffffff' }, `${prefix} ${contentStr}`)
         );
     } else if (type === 'added') {
-        return React.createElement(Box, { backgroundColor: '#216931ff', width: '100%' },
+        return React.createElement(Box, { backgroundColor: '#216931ff' },
             React.createElement(Text, { color: '#9fbca5ff' }, lineNumStr),
             React.createElement(Text, { color: '#ffffff' }, `${prefix} ${contentStr}`)
         );
     } else {
         // Unchanged lines: gray text with dimming
-        return React.createElement(Box, { width: '100%' },
+        return React.createElement(Box, {},
             React.createElement(Text, { color: '#898989ff', dimColor: true }, lineNumStr),
             React.createElement(Text, { color: '#ffffff', dimColor: true }, `${prefix} ${contentStr}`)
         );
@@ -323,26 +368,49 @@ export function FileDiffViewer({ filePath, startLine, endLine, oldContent, newCo
         const diff = calculateDiff(beforeLines, afterLines);
         debugLog(`Diff items: ${diff.length}`);
 
+        // Handle empty diff (no changes)
+        if (diff.length === 0) {
+            debugLog(`No diff detected - both contents are identical or empty`);
+            return React.createElement(Box, { flexDirection: 'column' },
+                React.createElement(Text, { color: 'yellow' }, `No changes detected in ${filePath}`)
+            );
+        }
+
+        // Check if this is a word-level diff result
+        const isWordDiff = diff[0].isWordDiff === true;
+        debugLog(`Is word-level diff: ${isWordDiff}`);
+
         // Calculate line count changes for header
-        const removedCount = diff.filter(item => item.type === 'removed').length;
-        const addedCount = diff.filter(item => item.type === 'added').length;
+        const removedLineCount = beforeLines.length;
+        const addedLineCount = afterLines.length;
         const unchangedCount = diff.filter(item => item.type === 'unchanged').length;
-        const afterEndLine = endLine + (addedCount - removedCount);
+        
+        // Calculate the end line in the new file
+        // The new content spans from startLine to startLine + afterLines.length - 1
+        // Special case: if adding lines is 0, we're deleting everything, so afterEndLine could be startLine - 1
+        const afterEndLine = addedLineCount > 0 ? (startLine + addedLineCount - 1) : (startLine - 1);
 
         debugLog(`Diff statistics:`);
-        debugLog(`  Removed: ${removedCount}`);
-        debugLog(`  Added: ${addedCount}`);
+        debugLog(`  Removed lines: ${removedLineCount}`);
+        debugLog(`  Added lines: ${addedLineCount}`);
         debugLog(`  Unchanged: ${unchangedCount}`);
         debugLog(`  afterEndLine: ${afterEndLine}`);
 
-        const element = React.createElement(Box, { flexDirection: 'column', width: '95%', marginBottom: 2 },
+        // Format header display
+        const oldRange = endLine === startLine ? `${startLine}` : `${startLine}-${endLine}`;
+        const newRange = addedLineCount === 0 
+            ? `deleted` 
+            : (afterEndLine === startLine ? `${startLine}` : `${startLine}-${afterEndLine}`);
+        const rangeInfo = addedLineCount === 0 
+            ? `(Lines ${oldRange} deleted)` 
+            : `(Lines ${oldRange} → ${newRange})`;
+
+        const element = React.createElement(Box, { flexDirection: 'column', marginBottom: 2 },
             React.createElement(Box, { flexDirection: 'column', borderStyle: 'single', borderColor: '#4a4a4a' },
                 // Header
                 React.createElement(Box, { marginBottom: 1 },
                     React.createElement(Text, { bold: true, color: 'cyan' }, ` ${filePath} `),
-                    React.createElement(Text, { color: '#545454' },
-                        `(Lines ${startLine}-${endLine} → ${startLine}-${afterEndLine})`
-                    )
+                    React.createElement(Text, { color: '#545454' }, rangeInfo)
                 ),
 
                 // Context before
@@ -364,11 +432,6 @@ export function FileDiffViewer({ filePath, startLine, endLine, oldContent, newCo
                     let oldLineNum = startLine;
                     let newLineNum = startLine;
 
-                    // Detect if this is a word-level diff (all items are fragments, not full lines)
-                    const isWordDiff = diff.length > 0 && diff.every(item =>
-                        !item.oldLine?.includes('\n') && !item.newLine?.includes('\n')
-                    );
-
                     if (isWordDiff) {
                         // Render as inline diff: old line first, then new line
                         const oldParts = [];
@@ -386,7 +449,7 @@ export function FileDiffViewer({ filePath, startLine, endLine, oldContent, newCo
                         }
 
                         // Render old line (with removed parts highlighted)
-                        if (oldParts.length > 0) {
+                        if (oldParts.length > 0 && oldParts.some(p => p.text)) {
                             rows.push(
                                 React.createElement(InlineDiffLine, {
                                     key: 'inline-old',
@@ -399,7 +462,7 @@ export function FileDiffViewer({ filePath, startLine, endLine, oldContent, newCo
                         }
 
                         // Render new line (with added parts highlighted)
-                        if (newParts.length > 0) {
+                        if (newParts.length > 0 && newParts.some(p => p.text)) {
                             rows.push(
                                 React.createElement(InlineDiffLine, {
                                     key: 'inline-new',
@@ -461,8 +524,10 @@ export function FileDiffViewer({ filePath, startLine, endLine, oldContent, newCo
                 })(),
 
                 // Context after - use the final line number after all changes
+                // If all lines were deleted (afterEndLine < startLine), context starts at startLine
                 ...contextAfter.map((line, idx) => {
-                    const lineNum = afterEndLine + 1 + idx;
+                    const contextAfterStartLine = afterEndLine >= startLine ? (afterEndLine + 1) : startLine;
+                    const lineNum = contextAfterStartLine + idx;
                     return React.createElement(UnifiedDiffLine, {
                         key: `ctx-after-${idx}`,
                         oldLineNum: lineNum,

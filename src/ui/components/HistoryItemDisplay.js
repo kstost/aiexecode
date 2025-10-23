@@ -85,13 +85,31 @@ function getTypeConfig(type) {
     return TYPE_CONFIG[type] || TYPE_CONFIG.default;
 }
 
-function CodeExecutionDisplay({ item, hasFollowingResult }) {
+function CodeExecutionDisplay({ item, hasFollowingResult, nextItem }) {
     const config = getTypeConfig(item.type);
 
     const languageName = item.language.charAt(0).toUpperCase() + item.language.slice(1);
 
-    // code_execution 다음에 code_result가 오면 marginBottom 0
-    const marginBottom = 0;//hasFollowingResult ? 0 : 1;
+    // Check if code execution was denied by user
+    const resultStderr = item.result?.stderr || nextItem?.stderr;
+    const isDenied = resultStderr?.includes('User denied code execution');
+
+    // code_execution 다음에 code_result가 오면 marginBottom 0, 아니면 1
+    // 단, denied된 경우 code_result가 렌더링되지 않으므로 항상 1
+    const marginBottom = (hasFollowingResult && !isDenied) ? 0 : 1;
+
+    if (isDenied) {
+        return React.createElement(Box, { flexDirection: "column", marginBottom },
+            React.createElement(Box, { flexDirection: "row", marginBottom: 0 },
+                React.createElement(Text, { color: config.color, bold: true }, config.icon),
+                React.createElement(Text, { color: theme.text.primary }, 'Executing '),
+                React.createElement(Text, { color: theme.status.warning, bold: true }, languageName)
+            ),
+            React.createElement(Box, { marginLeft: 2, marginTop: 0 },
+                React.createElement(Text, { color: 'yellow' }, '✗ User denied this action')
+            )
+        );
+    }
 
     return React.createElement(Box, { flexDirection: "column", marginBottom },
         React.createElement(Box, { flexDirection: "row", marginBottom: 0 },
@@ -110,13 +128,21 @@ function CodeResultDisplay({ item }) {
     const hasStdout = item.stdout && item.stdout.trim();
     const hasStderr = item.stderr && item.stderr.trim();
 
+    // Check if code execution was denied
+    const isDenied = hasStderr && item.stderr.includes('User denied code execution');
+
+    if (isDenied) {
+        // Don't display code_result when denied (already shown in code_execution)
+        return null;
+    }
+
     return React.createElement(Box, { marginBottom: 1, marginTop: 0, marginLeft: 2, flexGrow: 1 },
         React.createElement(Box, {
             flexDirection: "column",
             borderStyle: "round",
             borderColor: theme.border.default,
             paddingX: 1,
-            width: "100%"
+            flexGrow: 1
         },
             hasStdout && React.createElement(Box, { marginBottom: 0 },
                 React.createElement(Text, { color: theme.text.primary }, item.stdout)
@@ -135,6 +161,11 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
     const { type, text, operations = [], toolName, toolInput, args } = item;
     const config = getTypeConfig(type);
 
+    debugLog('---------- StandardDisplay START ----------');
+    debugLog(`type: ${type}, toolName: ${toolName || 'N/A'}`);
+    debugLog(`text: ${text?.substring(0, 100) || 'N/A'}...`);
+    debugLog(`hasFollowingResult: ${hasFollowingResult}, isLastInBatch: ${isLastInBatch}`);
+
     // tool_start는 args를, tool_result는 toolInput을 사용
     const effectiveArgs = toolInput || args;
 
@@ -146,8 +177,13 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
 
         // tool_start에는 result가 없으므로 nextItem(tool_result)에서 가져옴
         const originalResult = item.result?.originalResult || nextItem?.result?.originalResult;
+        
+        // Check if the tool was denied by the user
+        const isDenied = originalResult?.operation_successful === false && 
+                        originalResult?.error_message === 'User denied tool execution';
+        
         if (originalResult?.operation_successful === false) {
-            diffData = { loaded: true, hasContent: false };
+            diffData = { loaded: true, hasContent: false, isDenied };
         } else {
             try {
                 // 우선 메모리의 getFileSnapshot 시도 (절대 경로 사용), 없으면 히스토리 아이템에 저장된 스냅샷 사용
@@ -231,9 +267,13 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
         debugLog(`operation_successful: ${originalResult?.operation_successful}`);
         debugLog(`originalResult source: ${item.result?.originalResult ? 'item.result' : nextItem?.result?.originalResult ? 'nextItem.result' : 'none'}`);
 
+        // Check if the tool was denied by the user
+        const isDenied = originalResult?.operation_successful === false && 
+                        originalResult?.error_message === 'User denied tool execution';
+
         if (originalResult?.operation_successful === false) {
             debugLog('Operation was NOT successful, skipping diff display');
-            diffData = { loaded: true, hasContent: false };
+            diffData = { loaded: true, hasContent: false, isDenied };
         } else {
             try {
                 // 스냅샷 우선순위: 히스토리 저장 스냅샷 > 메모리 스냅샷
@@ -411,11 +451,25 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
         debugLog('========== edit_file_replace DIFF LOADING END ==========');
     }
 
-    // tool_start는 다음에 tool_result가 있으면 marginBottom 0, 없으면 1
-    // tool_result는 marginTop 0
-    // 배치의 마지막 항목이면 marginBottom 0
-    const marginBottom = isLastInBatch ? 0 : 1;
-    const marginTop = 0;//type === 'tool_result' ? 0 : undefined;
+    // 간격 규칙:
+    // - tool_start 다음에 tool_result가 있고 렌더링되면 marginBottom: 0, 아니면 1
+    //   tool_result가 렌더링되지 않는 경우:
+    //     1. edit 도구가 성공한 경우 (tool_result가 null 반환)
+    //     2. denied된 도구 (tool_result가 null 반환)
+    // - tool_result는 항상 marginBottom: 1
+    // - 나머지 요소는 marginBottom: 1
+    
+    // tool_start가 denied되었는지 확인
+    const originalResult = item.result?.originalResult || nextItem?.result?.originalResult;
+    const isDenied = originalResult?.operation_successful === false && 
+                     originalResult?.error_message === 'User denied tool execution';
+    
+    const isEditTool = toolName === 'edit_file_range' || toolName === 'edit_file_replace';
+    // edit 도구가 성공한 경우만 tool_result를 숨김 (실패는 표시)
+    const isEditToolSuccess = isEditTool && originalResult?.operation_successful !== false;
+    const shouldHaveGap = isEditToolSuccess || isDenied;
+    const marginBottom = (type === 'tool_start' && hasFollowingResult && !shouldHaveGap) ? 0 : 1;
+    const marginTop = 0;
 
     if (false) {
         return React.createElement(Box, { flexDirection: "row", marginBottom, marginTop },
@@ -455,22 +509,30 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
         );
     }
 
-    // edit_file_range와 edit_file_replace: tool_result는 완전히 숨기고 tool_start만 표시
+    // edit_file_range와 edit_file_replace: 성공한 경우와 denied된 경우 tool_result를 숨김
     if (type === 'tool_result' && (toolName === 'edit_file_range' || toolName === 'edit_file_replace')) {
-        return null;
+        const originalResult = item.result?.originalResult;
+        const isEditDenied = originalResult?.operation_successful === false && 
+                             originalResult?.error_message === 'User denied tool execution';
+        
+        // 성공한 경우나 denied된 경우 tool_result를 숨김
+        if (originalResult?.operation_successful !== false || isEditDenied) {
+            return null;
+        }
+        // 실패했지만 denied가 아닌 경우는 계속 진행하여 tool_result 표시
     }
 
     // tool_start이고 edit_file_range인 경우 FileDiffViewer 표시
     if (type === 'tool_start' && toolName === 'edit_file_range' && effectiveArgs) {
         if (diffData?.loaded && diffData.hasContent) {
-            const result = React.createElement(Box, { flexDirection: "column", marginBottom, marginTop, width: "100%" },
+            const result = React.createElement(Box, { flexDirection: "column", marginBottom, marginTop },
                 React.createElement(Box, { flexDirection: "row" },
                     React.createElement(Text, { color: config.color, bold: config.bold }, config.icon),
                     React.createElement(Text, {
                         color: theme.text.primary
                     }, text)
                 ),
-                React.createElement(Box, { marginLeft: 2, width: "100%" },
+                React.createElement(Box, { marginLeft: 2 },
                     React.createElement(FileDiffViewer, {
                         filePath: effectiveArgs.file_path,
                         startLine: effectiveArgs.start_line,
@@ -486,7 +548,22 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
 
             return result;
         } else if (diffData?.loaded && !diffData.hasContent) {
-            // fallback: 기본 tool 표시
+            // Check if the tool was denied by user
+            if (diffData.isDenied) {
+                const displayName = getToolDisplayName(toolName);
+                
+                return React.createElement(Box, { flexDirection: "column", marginBottom, marginTop },
+                    React.createElement(Box, { flexDirection: "row" },
+                        React.createElement(Text, { color: config.color, bold: config.bold }, config.icon),
+                        React.createElement(Text, { color: 'white', bold: true }, displayName)
+                    ),
+                    React.createElement(Box, { marginLeft: 2, marginTop: 0 },
+                        React.createElement(Text, { color: 'yellow' }, '✗ User denied this action')
+                    )
+                );
+            }
+            
+            // fallback: 기본 tool 표시 (실패했지만 deny는 아닌 경우)
             const displayName = getToolDisplayName(toolName);
             const formattedArgs = formatToolCall(toolName, effectiveArgs || {});
 
@@ -520,14 +597,14 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
             debugLog(`  oldContent length: ${diffData.oldContent?.length || 0}`);
             debugLog(`  newContent length: ${diffData.newContent?.length || 0}`);
 
-            const result = React.createElement(Box, { flexDirection: "column", marginBottom, marginTop, width: "100%" },
+            const result = React.createElement(Box, { flexDirection: "column", marginBottom, marginTop },
                 React.createElement(Box, { flexDirection: "row" },
                     React.createElement(Text, { color: config.color, bold: config.bold }, config.icon),
                     React.createElement(Text, {
                         color: theme.text.primary
                     }, text)
                 ),
-                React.createElement(Box, { marginLeft: 2, width: "100%" },
+                React.createElement(Box, { marginLeft: 2 },
                     React.createElement(FileDiffViewer, {
                         filePath: effectiveArgs.file_path,
                         startLine: diffData.startLine,
@@ -545,7 +622,24 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
             return result;
         } else if (diffData?.loaded && !diffData.hasContent) {
             debugLog('Rendering FALLBACK (no content) for edit_file_replace');
-            // fallback: 기본 tool 표시
+            
+            // Check if the tool was denied by user
+            if (diffData.isDenied) {
+                debugLog('Tool was DENIED by user');
+                const displayName = getToolDisplayName(toolName);
+                
+                return React.createElement(Box, { flexDirection: "column", marginBottom, marginTop },
+                    React.createElement(Box, { flexDirection: "row" },
+                        React.createElement(Text, { color: config.color, bold: config.bold }, config.icon),
+                        React.createElement(Text, { color: 'white', bold: true }, displayName)
+                    ),
+                    React.createElement(Box, { marginLeft: 2, marginTop: 0 },
+                        React.createElement(Text, { color: 'yellow' }, '✗ User denied this action')
+                    )
+                );
+            }
+            
+            // fallback: 기본 tool 표시 (실패했지만 deny는 아닌 경우)
             const displayName = getToolDisplayName(toolName);
             const formattedArgs = formatToolCall(toolName, effectiveArgs || {});
 
@@ -572,6 +666,23 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
     if (type === 'tool_start' && toolName && toolName !== 'edit_file_range' && toolName !== 'edit_file_replace') {
         const displayName = getToolDisplayName(toolName);
         const formattedArgs = formatToolCall(toolName, item.args || {});
+
+        // Check if this tool was denied by user
+        const originalResult = item.result?.originalResult || nextItem?.result?.originalResult;
+        const isDenied = originalResult?.operation_successful === false && 
+                        originalResult?.error_message === 'User denied tool execution';
+
+        if (isDenied) {
+            return React.createElement(Box, { flexDirection: "column", marginBottom, marginTop },
+                React.createElement(Box, { flexDirection: "row" },
+                    React.createElement(Text, { color: config.color, bold: config.bold }, config.icon),
+                    React.createElement(Text, { color: 'white', bold: true }, displayName)
+                ),
+                React.createElement(Box, { marginLeft: 2, marginTop: 0 },
+                    React.createElement(Text, { color: 'yellow' }, '✗ User denied this action')
+                )
+            );
+        }
 
         return React.createElement(Box, { flexDirection: "column", marginBottom, marginTop },
             React.createElement(Box, { flexDirection: "row" },
@@ -605,11 +716,31 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
         );
     }
 
+    debugLog(`Rendering default display: icon="${config.icon}", text="${text?.substring(0, 50)}..."`);
+    debugLog(`marginBottom: ${marginBottom}, marginTop: ${marginTop}`);
+    debugLog(`operations count: ${operations.length}`);
+    debugLog('---------- StandardDisplay END ----------');
+
+    // Check if this is a denied tool result
+    // Don't display tool_result when denied (already shown in tool_start)
+    const isDeniedResult = type === 'tool_result' && 
+                          (text?.includes('User denied tool execution') || 
+                           text?.includes('User denied code execution'));
+
+    if (isDeniedResult) {
+        // Don't display tool_result when denied (already shown in tool_start)
+        return null;
+    }
+
+    // tool_result에서 실패 메시지인 경우 빨간색으로 표시
+    const isErrorResult = type === 'tool_result' && originalResult?.operation_successful === false;
+    const textColor = isErrorResult ? theme.status.error : theme.text.primary;
+
     return React.createElement(Box, { flexDirection: "column", marginBottom, marginTop },
         React.createElement(Box, { flexDirection: "row" },
             React.createElement(Text, { color: config.color, bold: config.bold }, config.icon),
             React.createElement(Text, {
-                color: theme.text.primary
+                color: textColor
             }, text)
         ),
 
@@ -634,17 +765,28 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
 }
 
 export function HistoryItemDisplay({ item, isPending = false, terminalWidth, nextItem, isLastInBatch = false }) {
+    debugLog('========== HistoryItemDisplay RENDER ==========');
+    debugLog(`Item type: ${item.type}`);
+    debugLog(`Item toolName: ${item.toolName || 'N/A'}`);
+    debugLog(`Item text: ${item.text?.substring(0, 100) || 'N/A'}...`);
+    debugLog(`isPending: ${isPending}, isLastInBatch: ${isLastInBatch}`);
+    debugLog(`nextItem: ${nextItem ? nextItem.type : 'null'}`);
+
     if (item.type === 'code_execution' && item.code && item.language) {
         const hasFollowingResult = nextItem && nextItem.type === 'code_result';
-        return React.createElement(CodeExecutionDisplay, { item, hasFollowingResult });
+        debugLog('Rendering CodeExecutionDisplay');
+        return React.createElement(CodeExecutionDisplay, { item, hasFollowingResult, nextItem });
     }
 
     if (item.type === 'code_result') {
+        debugLog('Rendering CodeResultDisplay');
         return React.createElement(CodeResultDisplay, { item });
     }
 
     // tool_start 다음에 tool_result가 오는지 확인
     const hasFollowingResult = item.type === 'tool_start' && nextItem && nextItem.type === 'tool_result';
+    debugLog(`hasFollowingResult: ${hasFollowingResult}`);
+    debugLog('Rendering StandardDisplay');
 
     const result = React.createElement(StandardDisplay, { item, isPending, hasFollowingResult, nextItem, isLastInBatch });
 

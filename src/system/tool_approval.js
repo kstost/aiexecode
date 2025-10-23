@@ -5,7 +5,6 @@
 import { uiEvents } from './ui_events.js';
 import { getFileSnapshot } from './file_integrity.js';
 import { resolve } from 'path';
-import { promises as fs } from 'fs';
 
 // 승인이 필요한 도구 목록
 const APPROVAL_REQUIRED_TOOLS = new Set([
@@ -39,30 +38,19 @@ export function registerMCPTool(toolName, server, description) {
  * 성공 가능한 경우 {willFail: false} 반환
  */
 async function willDefinitelyFail(toolName, args) {
-    // edit_file_replace: 파일이 읽히지 않았거나 old_string이 없는 경우
+    // edit_file_replace: 스냅샷이 없거나 old_string이 없는 경우
     if (toolName === 'edit_file_replace') {
         try {
             const absolutePath = resolve(args.file_path);
 
-            // 실제 파일을 읽어서 검증 (스냅샷은 이전 tool call로 인해 outdated 될 수 있음)
-            let content = '';
-            try {
-                content = await fs.readFile(absolutePath, 'utf8');
-            } catch (readError) {
-                // 파일 읽기 실패 시 에러 종류에 따라 처리
-                // ENOENT (파일 없음): 스냅샷 확인 (이전에 읽었을 수 있음)
-                // 기타 에러 (권한 없음 등): 확실히 실패할 것으로 판단
-                if (readError.code !== 'ENOENT') {
-                    return { willFail: true, reason: `File read error: ${readError.message}` };
-                }
+            // 스냅샷만 확인 (실제 파일을 읽지 않음)
+            // 편집 도구는 반드시 먼저 read_file로 읽어야 함
+            const snapshot = getFileSnapshot(absolutePath);
+            const content = snapshot?.content;
 
-                // 파일이 없는 경우, 스냅샷 사용 시도
-                const snapshot = getFileSnapshot(absolutePath);
-                content = snapshot?.content || '';
-
-                if (!content) {
-                    return { willFail: true, reason: 'File not found and no snapshot available' };
-                }
+            // 스냅샷이 없으면 확실히 실패 (파일을 먼저 읽지 않았음)
+            if (content === undefined || content === null) {
+                return { willFail: true, reason: 'File not read yet or empty' };
             }
 
             // old_string이 파일에 없는 경우
@@ -76,30 +64,19 @@ async function willDefinitelyFail(toolName, args) {
         }
     }
 
-    // edit_file_range: 파일이 읽히지 않은 경우
+    // edit_file_range: 스냅샷이 없는 경우
     if (toolName === 'edit_file_range') {
         try {
             const absolutePath = resolve(args.file_path);
 
-            // 실제 파일을 읽어서 검증
-            let content = '';
-            try {
-                content = await fs.readFile(absolutePath, 'utf8');
-            } catch (readError) {
-                // 파일 읽기 실패 시 에러 종류에 따라 처리
-                // ENOENT (파일 없음): 스냅샷 확인 (이전에 읽었을 수 있음)
-                // 기타 에러 (권한 없음 등): 확실히 실패할 것으로 판단
-                if (readError.code !== 'ENOENT') {
-                    return { willFail: true, reason: `File read error: ${readError.message}` };
-                }
+            // 스냅샷만 확인 (실제 파일을 읽지 않음)
+            // 편집 도구는 반드시 먼저 read_file로 읽어야 함
+            const snapshot = getFileSnapshot(absolutePath);
+            const content = snapshot?.content;
 
-                // 파일이 없는 경우, 스냅샷 사용 시도
-                const snapshot = getFileSnapshot(absolutePath);
-                content = snapshot?.content || '';
-
-                if (!content) {
-                    return { willFail: true, reason: 'File not found and no snapshot available' };
-                }
+            // 스냅샷이 없으면 확실히 실패 (파일을 먼저 읽지 않았음)
+            if (content === undefined || content === null) {
+                return { willFail: true, reason: 'File not read yet or empty' };
             }
         } catch (error) {
             return { willFail: true, reason: `Validation error: ${error.message}` };

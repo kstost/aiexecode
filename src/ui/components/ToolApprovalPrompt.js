@@ -42,7 +42,7 @@ export function ToolApprovalPrompt({ toolName, args, onDecision, mcpToolInfo = n
         borderStyle: 'round',
         borderColor: 'yellow',
         paddingX: 1,
-        width: '100%'
+        flexGrow: 1
     },
         // Tool info
         React.createElement(Box, { flexDirection: 'column', marginBottom: 0, marginTop: 0 },

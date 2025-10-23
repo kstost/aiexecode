@@ -15,6 +15,9 @@ import { uiEvents } from '../system/ui_events.js';
 import { getToolDisplayConfig, extractMessageFromArgs, formatToolCall, formatToolResult, getToolDisplayName } from '../system/tool_registry.js';
 import { ToolApprovalPrompt } from './components/ToolApprovalPrompt.js';
 import { SetupWizard } from './components/SetupWizard.js';
+import { createDebugLogger } from '../util/debug_log.js';
+
+const debugLog = createDebugLogger('ui_app.log', 'App');
 
 // Memoized header component
 const MemoizedHeader = memo(function MemoizedHeader({ version }) {
@@ -251,22 +254,40 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
 
     // Add event to appropriate history
     const addToHistory = useCallback((event) => {
+        debugLog('========== ADD TO HISTORY START ==========');
+        debugLog(`Event type: ${event.type}`);
+        debugLog(`Event toolName: ${event.toolName || 'N/A'}`);
+        debugLog(`Event data: ${JSON.stringify(event).substring(0, 200)}...`);
+
         const transformed = transformEvent(event);
-        if (!transformed) return; // Skip null events
+        if (!transformed) {
+            debugLog('Event transformed to null - SKIPPING');
+            debugLog('========== ADD TO HISTORY END (SKIPPED) ==========');
+            return; // Skip null events
+        }
+
+        debugLog(`Transformed type: ${transformed.type}`);
+        debugLog(`Transformed text: ${transformed.text?.substring(0, 100) || 'N/A'}...`);
+        debugLog(`isSessionRunning: ${isSessionRunning}`);
 
         if (isSessionRunning) {
             setPendingHistory(prev => {
                 const newType = transformed.type;
+                debugLog(`Processing in session mode, newType: ${newType}`);
 
                 // 쌍이 필요 없는 단일 이벤트 타입들 (즉시 static으로)
+                // Note: tool_start and code_execution are NOT in this list - they should wait for their result
                 const singleEventTypes = [
                     'user', 'assistant', 'system', 'error',
-                    'tool_start', 'code_execution',  // 도구/코드 실행 메시지도 즉시 표시
                     'iteration_start', 'verification_start', 'verification_result',
                     'mission_failed', 'rag_search', 'conversation_restored'
                 ];
 
                 if (singleEventTypes.includes(newType)) {
+                    debugLog(`Single event type detected: ${newType}`);
+                    debugLog(`Adding to static items immediately`);
+                    debugLog(`Tool name for this event: ${transformed.toolName || 'N/A'}`);
+
                     const itemKey = staticItemKeyCounter.current++;
                     setStaticItems(current => [
                         ...current,
@@ -279,6 +300,8 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
                         })
                     ]);
                     setHistory(hist => [...hist, transformed]);
+                    debugLog(`Added to static items with key: static-${itemKey}`);
+                    debugLog('========== ADD TO HISTORY END (SINGLE EVENT) ==========');
                     return prev; // 기존 pending 유지 (단일 이벤트는 독립적)
                 }
 
@@ -308,17 +331,21 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
 
                 // 쌍이 완료된 경우: 즉시 Static으로 이동
                 if (isPair) {
+                    debugLog(`Pair completed! pairIndex: ${pairIndex}`);
                     const pairedStart = prev[pairIndex];
+                    debugLog(`Paired start type: ${pairedStart.type}, toolName: ${pairedStart.toolName || 'N/A'}`);
                     const completedPair = [pairedStart, transformed];
                     const remainingPending = [...prev.slice(0, pairIndex), ...prev.slice(pairIndex + 1)];
 
                     // Static에 즉시 추가
                     const startKey = staticItemKeyCounter.current;
+                    debugLog(`Adding pair to static items with keys: static-${startKey}, static-${startKey + 1}`);
                     setStaticItems(current => [
                         ...current,
                         ...completedPair.map((item, index) => {
                             const nextItem = completedPair[index + 1];
                             const isLastInBatch = index === completedPair.length - 1;
+                            debugLog(`  Pair item ${index}: type=${item.type}, toolName=${item.toolName || 'N/A'}, isLastInBatch=${isLastInBatch}`);
                             return React.createElement(HistoryItemDisplay, {
                                 key: `static-${startKey + index}`,
                                 item,
@@ -330,12 +357,15 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
                     ]);
                     staticItemKeyCounter.current += completedPair.length;
                     setHistory(hist => [...hist, ...completedPair]);
+                    debugLog('========== ADD TO HISTORY END (PAIR COMPLETED) ==========');
 
                     return remainingPending; // Pending에서 제거
                 }
 
                 // result 타입인데 매칭 실패 → 단독으로 즉시 static 이동 (pending 누적 방지)
                 if (newType === 'tool_result' || newType === 'code_result') {
+                    debugLog(`Result without matching start: ${newType}, toolName: ${transformed.toolName || 'N/A'}`);
+                    debugLog(`Adding orphaned result to static items`);
                     const itemKey = staticItemKeyCounter.current++;
                     setStaticItems(current => [
                         ...current,
@@ -348,14 +378,18 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
                         })
                     ]);
                     setHistory(hist => [...hist, transformed]);
+                    debugLog('========== ADD TO HISTORY END (ORPHANED RESULT) ==========');
                     return prev; // 기존 pending 유지
                 }
 
                 // 쌍의 시작 부분 (tool_start, code_execution)은 pending에 추가
+                debugLog(`Adding to pending (waiting for pair): ${newType}`);
+                debugLog('========== ADD TO HISTORY END (ADDED TO PENDING) ==========');
                 return [...prev, transformed];
             });
         } else {
             // 세션이 실행 중이 아닐 때는 바로 static items에 추가
+            debugLog('Session not running - adding directly to static items');
             setHistory(prev => [...prev, transformed]);
             const itemKey = staticItemKeyCounter.current++;
             setStaticItems(current => [
@@ -368,6 +402,8 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
                     isLastInBatch: true
                 })
             ]);
+            debugLog(`Added to static items with key: static-${itemKey}`);
+            debugLog('========== ADD TO HISTORY END (NOT RUNNING) ==========');
         }
     }, [isSessionRunning, transformEvent, terminalWidth]);
 
