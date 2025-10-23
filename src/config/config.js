@@ -8,4 +8,4 @@
  * true: debug.txt 파일에 상세 로그 기록
  * false: 디버그 로그 비활성화 (프로덕션)
  */
-export const ENABLE_DEBUG_LOG = false;
+export const ENABLE_DEBUG_LOG = true;

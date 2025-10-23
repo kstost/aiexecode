@@ -418,8 +418,13 @@ function renderToolArgs(toolName, args, mcpToolInfo = null) {
 
                     // 라인 번호 계산
                     const beforeMatch = content.substring(0, index);
-                    const startLine = (beforeMatch.match(/\n/g) || []).length + 1;
-                    const oldStringLines = (oldString.match(/\n/g) || []).length + 1;
+                    const startLine = beforeMatch.split('\n').length;
+                    
+                    // Calculate actual line count (handle trailing newline)
+                    const oldStringSplit = oldString.split('\n');
+                    const oldStringLines = oldString.endsWith('\n') 
+                        ? oldStringSplit.length - 1 
+                        : oldStringSplit.length;
                     const endLine = startLine + oldStringLines - 1;
 
                     // 파일을 라인 단위로 분할
@@ -427,12 +432,10 @@ function renderToolArgs(toolName, args, mcpToolInfo = null) {
                     const actualLines = content === '' ? [] :
                         (content.endsWith('\n') ? lines.slice(0, -1) : lines);
 
-                    // Extract the FULL lines that contain old_string
-                    const affectedLines = actualLines.slice(startLine - 1, endLine);
-                    const fullOldContent = affectedLines.join('\n');
-
-                    // Create full new content by replacing old_string with new_string
-                    const fullNewContent = fullOldContent.replace(oldString, newString);
+                    // Use old_string and new_string directly for accurate diff
+                    // Normalize trailing newlines to ensure consistent line counting
+                    const fullOldContent = oldString.replace(/\n$/, '');
+                    const fullNewContent = newString.replace(/\n$/, '');
 
                     // Extract context (2 lines before and after)
                     const contextLines = 2;
@@ -480,7 +483,8 @@ function renderToolArgs(toolName, args, mcpToolInfo = null) {
                         newContent: diffData.newContent,
                         contextBefore: diffData.contextBefore,
                         contextAfter: diffData.contextAfter,
-                        contextStartLine: diffData.contextStartLine
+                        contextStartLine: diffData.contextStartLine,
+                        isReplaceMode: true
                     })
             ) : React.createElement(Text, { color: 'gray' }, 'Loading...')
         );

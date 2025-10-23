@@ -393,24 +393,35 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
                         const beforeOldString = content.substring(0, oldStringIndex);
                         const startLine = beforeOldString.split('\n').length;
 
-                        const oldStringLines = effectiveArgs.old_string.split('\n').length;
+                        // Calculate actual line count (handle trailing newline)
+                        const oldStringSplit = effectiveArgs.old_string.split('\n');
+                        const oldStringLines = effectiveArgs.old_string.endsWith('\n') 
+                            ? oldStringSplit.length - 1 
+                            : oldStringSplit.length;
                         const endLine = startLine + oldStringLines - 1;
 
+                        debugLog(`[EDIT_FILE_REPLACE] old_string analysis:`);
+                        debugLog(`  - split length: ${oldStringSplit.length}`);
+                        debugLog(`  - ends with newline: ${effectiveArgs.old_string.endsWith('\n')}`);
+                        debugLog(`  - calculated line count: ${oldStringLines}`);
                         debugLog(`Calculated startLine: ${startLine}, endLine: ${endLine}`);
 
                         const lines = content.split('\n');
                         const actualLines = content === '' ? [] :
                             (content.endsWith('\n') ? lines.slice(0, -1) : lines);
 
-                        // Extract the FULL lines that contain old_string
-                        const affectedLines = actualLines.slice(startLine - 1, endLine);
-                        const fullOldContent = affectedLines.join('\n');
+                        // For edit_file_replace, use old_string and new_string directly
+                        // Normalize trailing newlines to ensure consistent line counting
+                        const fullOldContent = effectiveArgs.old_string.replace(/\n$/, '');
+                        const fullNewContent = effectiveArgs.new_string.replace(/\n$/, '');
 
-                        // Create full new content by replacing old_string with new_string
-                        const fullNewContent = fullOldContent.replace(effectiveArgs.old_string, effectiveArgs.new_string);
-
-                        debugLog(`Full old content: ${fullOldContent.substring(0, 100)}...`);
-                        debugLog(`Full new content: ${fullNewContent.substring(0, 100)}...`);
+                        debugLog(`[EDIT_FILE_REPLACE] Content for diff:`);
+                        debugLog(`  - fullOldContent length: ${fullOldContent.length} bytes`);
+                        debugLog(`  - fullOldContent lines: ${fullOldContent.split('\n').length}`);
+                        debugLog(`  - fullNewContent length: ${fullNewContent.length} bytes`);
+                        debugLog(`  - fullNewContent lines: ${fullNewContent.split('\n').length}`);
+                        debugLog(`Full old content preview: ${fullOldContent.substring(0, 100)}...`);
+                        debugLog(`Full new content preview: ${fullNewContent.substring(0, 100)}...`);
 
                         // Extract context (2 lines before and after)
                         const contextLines = 2;
@@ -434,6 +445,11 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
                             endLine: endLine
                         };
 
+                        debugLog('[EDIT_FILE_REPLACE] diffData created:');
+                        debugLog(`  - startLine: ${startLine}, endLine: ${endLine}`);
+                        debugLog(`  - contextStartLine: ${contextStartIdx + 1}`);
+                        debugLog(`  - contextBefore: ${ctxBefore.length} lines`);
+                        debugLog(`  - contextAfter: ${ctxAfter.length} lines`);
                         debugLog('diffData created successfully with hasContent: true');
                     }
                 }
@@ -456,19 +472,33 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
     //   tool_result가 렌더링되지 않는 경우:
     //     1. edit 도구가 성공한 경우 (tool_result가 null 반환)
     //     2. denied된 도구 (tool_result가 null 반환)
-    // - tool_result는 항상 marginBottom: 1
+    // - tool_result는 항상 marginBottom: 1 (다음 요소와 빈 줄)
     // - 나머지 요소는 marginBottom: 1
     
-    // tool_start가 denied되었는지 확인
+    // originalResult는 여러 곳에서 사용되므로 먼저 정의
     const originalResult = item.result?.originalResult || nextItem?.result?.originalResult;
-    const isDenied = originalResult?.operation_successful === false && 
-                     originalResult?.error_message === 'User denied tool execution';
     
-    const isEditTool = toolName === 'edit_file_range' || toolName === 'edit_file_replace';
-    // edit 도구가 성공한 경우만 tool_result를 숨김 (실패는 표시)
-    const isEditToolSuccess = isEditTool && originalResult?.operation_successful !== false;
-    const shouldHaveGap = isEditToolSuccess || isDenied;
-    const marginBottom = (type === 'tool_start' && hasFollowingResult && !shouldHaveGap) ? 0 : 1;
+    let marginBottom;
+    
+    if (type === 'tool_result') {
+        // tool_result는 항상 다음 요소와 빈 줄
+        marginBottom = 1;
+    } else if (type === 'tool_start') {
+        // tool_start는 다음에 tool_result가 렌더링되면 빈 줄 없음
+        const isDenied = originalResult?.operation_successful === false && 
+                         originalResult?.error_message === 'User denied tool execution';
+        
+        const isEditTool = toolName === 'edit_file_range' || toolName === 'edit_file_replace';
+        // edit 도구가 성공한 경우만 tool_result를 숨김 (실패는 표시)
+        const isEditToolSuccess = isEditTool && originalResult?.operation_successful !== false;
+        const shouldHaveGap = isEditToolSuccess || isDenied;
+        
+        marginBottom = (hasFollowingResult && !shouldHaveGap) ? 0 : 1;
+    } else {
+        // 나머지 모든 요소는 다음 요소와 빈 줄
+        marginBottom = 1;
+    }
+    
     const marginTop = 0;
 
     if (false) {
@@ -525,14 +555,14 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
     // tool_start이고 edit_file_range인 경우 FileDiffViewer 표시
     if (type === 'tool_start' && toolName === 'edit_file_range' && effectiveArgs) {
         if (diffData?.loaded && diffData.hasContent) {
-            const result = React.createElement(Box, { flexDirection: "column", marginBottom, marginTop },
+            const result = React.createElement(Box, { flexDirection: "column", marginBottom, marginTop, width: '100%' },
                 React.createElement(Box, { flexDirection: "row" },
                     React.createElement(Text, { color: config.color, bold: config.bold }, config.icon),
                     React.createElement(Text, {
                         color: theme.text.primary
                     }, text)
                 ),
-                React.createElement(Box, { marginLeft: 2 },
+                React.createElement(Box, { marginLeft: 2, width: '100%' },
                     React.createElement(FileDiffViewer, {
                         filePath: effectiveArgs.file_path,
                         startLine: effectiveArgs.start_line,
@@ -597,14 +627,14 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
             debugLog(`  oldContent length: ${diffData.oldContent?.length || 0}`);
             debugLog(`  newContent length: ${diffData.newContent?.length || 0}`);
 
-            const result = React.createElement(Box, { flexDirection: "column", marginBottom, marginTop },
+            const result = React.createElement(Box, { flexDirection: "column", marginBottom, marginTop, width: '100%' },
                 React.createElement(Box, { flexDirection: "row" },
                     React.createElement(Text, { color: config.color, bold: config.bold }, config.icon),
                     React.createElement(Text, {
                         color: theme.text.primary
                     }, text)
                 ),
-                React.createElement(Box, { marginLeft: 2 },
+                React.createElement(Box, { marginLeft: 2, width: '100%' },
                     React.createElement(FileDiffViewer, {
                         filePath: effectiveArgs.file_path,
                         startLine: diffData.startLine,
@@ -613,7 +643,8 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
                         newContent: diffData.newContent,
                         contextBefore: diffData.contextBefore,
                         contextAfter: diffData.contextAfter,
-                        contextStartLine: diffData.contextStartLine
+                        contextStartLine: diffData.contextStartLine,
+                        isReplaceMode: true
                     })
                 )
             );

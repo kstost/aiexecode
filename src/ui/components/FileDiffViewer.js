@@ -136,20 +136,37 @@ function detectLanguage(filePath) {
 }
 
 /**
- * Parse content lines - no file reading
+ * Normalize tabs to spaces for consistent terminal display
+ * Terminal renders tabs at 8-char boundaries, but editors typically use 2 or 4 spaces
+ * This ensures the diff displays the same as in the user's editor
  */
-function parseContentLines(oldContent, newContent) {
-    // Handle null, undefined
-    // Note: empty string '' should become [''] (one empty line), not []
+function normalizeTabs(text, tabWidth = 4) {
+    if (!text) return text;
+    // Replace each tab with the specified number of spaces
+    return text.replace(/\t/g, ' '.repeat(tabWidth));
+}
+
+/**
+ * Parse content lines - no file reading
+ * Normalizes tabs to spaces for consistent terminal display
+ */
+function parseContentLines(oldContent, newContent, tabWidth = 4) {
+    // Handle null, undefined, and empty string
     let beforeLines = [];
     let afterLines = [];
     
     if (oldContent !== null && oldContent !== undefined) {
-        beforeLines = oldContent.split('\n');
+        // Normalize tabs before splitting to ensure consistent display
+        const normalized = normalizeTabs(oldContent, tabWidth);
+        // Empty string should become empty array, not ['']
+        beforeLines = normalized === '' ? [] : normalized.split('\n');
     }
     
     if (newContent !== null && newContent !== undefined) {
-        afterLines = newContent.split('\n');
+        // Normalize tabs before splitting to ensure consistent display
+        const normalized = normalizeTabs(newContent, tabWidth);
+        // Empty string should become empty array, not ['']
+        afterLines = normalized === '' ? [] : normalized.split('\n');
     }
 
     return {
@@ -342,7 +359,7 @@ function UnifiedDiffLine({ oldLineNum, newLineNum, content, type, language }) {
 /**
  * Main FileDiffViewer component - Unified diff format
  */
-export function FileDiffViewer({ filePath, startLine, endLine, oldContent, newContent, contextBefore = [], contextAfter = [], contextStartLine = null }) {
+export function FileDiffViewer({ filePath, startLine, endLine, oldContent, newContent, contextBefore = [], contextAfter = [], contextStartLine = null, isReplaceMode = false }) {
     debugLog('========== FileDiffViewer RENDER START ==========');
     debugLog(`filePath: ${filePath}`);
     debugLog(`startLine: ${startLine}, endLine: ${endLine}`);
@@ -351,11 +368,23 @@ export function FileDiffViewer({ filePath, startLine, endLine, oldContent, newCo
     debugLog(`contextBefore lines: ${contextBefore.length}`);
     debugLog(`contextAfter lines: ${contextAfter.length}`);
     debugLog(`contextStartLine: ${contextStartLine}`);
+    debugLog(`isReplaceMode: ${isReplaceMode}`);
 
     try {
+        // Tab width: default 4 spaces (most common in modern editors)
+        // This ensures terminal display matches editor display
+        const tabWidth = 4;
+        
         debugLog(`Parsing content lines...`);
-        const { beforeLines, afterLines } = parseContentLines(oldContent, newContent);
+        const { beforeLines, afterLines } = parseContentLines(oldContent, newContent, tabWidth);
         debugLog(`beforeLines: ${beforeLines.length}, afterLines: ${afterLines.length}`);
+        debugLog(`beforeLines preview: ${beforeLines.slice(0, 3).map(l => JSON.stringify(l.substring(0, 50))).join(', ')}`);
+        debugLog(`afterLines preview: ${afterLines.slice(0, 3).map(l => JSON.stringify(l.substring(0, 50))).join(', ')}`);
+        
+        // Normalize tabs in context lines as well
+        const normalizedContextBefore = contextBefore.map(line => normalizeTabs(line, tabWidth));
+        const normalizedContextAfter = contextAfter.map(line => normalizeTabs(line, tabWidth));
+        debugLog(`Normalized context lines`);
 
         const language = detectLanguage(filePath);
         debugLog(`Detected language: ${language || 'none'}`);
@@ -367,6 +396,11 @@ export function FileDiffViewer({ filePath, startLine, endLine, oldContent, newCo
         debugLog(`Calculating diff...`);
         const diff = calculateDiff(beforeLines, afterLines);
         debugLog(`Diff items: ${diff.length}`);
+        debugLog(`Diff item types: ${diff.map(d => d.type).join(', ')}`);
+        const diffRemovedCount = diff.filter(d => d.type === 'removed').length;
+        const diffAddedCount = diff.filter(d => d.type === 'added').length;
+        const diffUnchangedCount = diff.filter(d => d.type === 'unchanged').length;
+        debugLog(`Diff breakdown: removed=${diffRemovedCount}, added=${diffAddedCount}, unchanged=${diffUnchangedCount}`);
 
         // Handle empty diff (no changes)
         if (diff.length === 0) {
@@ -405,16 +439,16 @@ export function FileDiffViewer({ filePath, startLine, endLine, oldContent, newCo
             ? `(Lines ${oldRange} deleted)` 
             : `(Lines ${oldRange} → ${newRange})`;
 
-        const element = React.createElement(Box, { flexDirection: 'column', marginBottom: 2 },
-            React.createElement(Box, { flexDirection: 'column', borderStyle: 'single', borderColor: '#4a4a4a' },
+        const element = React.createElement(Box, { flexDirection: 'column', marginBottom: 0, width: '100%' },
+            React.createElement(Box, { flexDirection: 'column', borderStyle: 'single', borderColor: '#3a3a3a', width: '100%' },
                 // Header
                 React.createElement(Box, { marginBottom: 1 },
                     React.createElement(Text, { bold: true, color: 'cyan' }, ` ${filePath} `),
                     React.createElement(Text, { color: '#545454' }, rangeInfo)
                 ),
 
-                // Context before
-                ...contextBefore.map((line, idx) => {
+                // Context before (with normalized tabs)
+                ...normalizedContextBefore.map((line, idx) => {
                     const lineNum = actualContextStartLine + idx;
                     return React.createElement(UnifiedDiffLine, {
                         key: `ctx-before-${idx}`,
@@ -431,6 +465,8 @@ export function FileDiffViewer({ filePath, startLine, endLine, oldContent, newCo
                     const rows = [];
                     let oldLineNum = startLine;
                     let newLineNum = startLine;
+                    
+                    debugLog(`[DIFF RENDERING] Starting with oldLineNum=${oldLineNum}, newLineNum=${newLineNum}`);
 
                     if (isWordDiff) {
                         // Render as inline diff: old line first, then new line
@@ -479,6 +515,7 @@ export function FileDiffViewer({ filePath, startLine, endLine, oldContent, newCo
                             const item = diff[i];
 
                             if (item.type === 'removed') {
+                                debugLog(`[DIFF #${i}] REMOVED line at oldLineNum=${oldLineNum}`);
                                 rows.push(
                                     React.createElement(UnifiedDiffLine, {
                                         key: `diff-removed-${oldLineNum}-${i}`,
@@ -491,6 +528,7 @@ export function FileDiffViewer({ filePath, startLine, endLine, oldContent, newCo
                                 );
                                 oldLineNum++;
                             } else if (item.type === 'added') {
+                                debugLog(`[DIFF #${i}] ADDED line at newLineNum=${newLineNum}`);
                                 rows.push(
                                     React.createElement(UnifiedDiffLine, {
                                         key: `diff-added-${newLineNum}-${i}`,
@@ -503,29 +541,37 @@ export function FileDiffViewer({ filePath, startLine, endLine, oldContent, newCo
                                 );
                                 newLineNum++;
                             } else if (item.type === 'unchanged') {
-                                // Unchanged lines in the edited range
-                                rows.push(
-                                    React.createElement(UnifiedDiffLine, {
-                                        key: `diff-unchanged-${oldLineNum}-${i}`,
-                                        oldLineNum: oldLineNum,
-                                        newLineNum: newLineNum,
-                                        content: item.oldLine,
-                                        type: 'unchanged',
-                                        language
-                                    })
-                                );
-                                oldLineNum++;
-                                newLineNum++;
+                                // In replace mode, skip unchanged lines to avoid line number shifts
+                                if (!isReplaceMode) {
+                                    debugLog(`[DIFF #${i}] UNCHANGED line at old=${oldLineNum}, new=${newLineNum} (rendering)`);
+                                    // Unchanged lines in the edited range
+                                    rows.push(
+                                        React.createElement(UnifiedDiffLine, {
+                                            key: `diff-unchanged-${oldLineNum}-${i}`,
+                                            oldLineNum: oldLineNum,
+                                            newLineNum: newLineNum,
+                                            content: item.oldLine,
+                                            type: 'unchanged',
+                                            language
+                                        })
+                                    );
+                                    oldLineNum++;
+                                    newLineNum++;
+                                } else {
+                                    debugLog(`[DIFF #${i}] UNCHANGED line SKIPPED (isReplaceMode=true)`);
+                                }
                             }
                         }
+                        debugLog(`[DIFF RENDERING] Final oldLineNum=${oldLineNum}, newLineNum=${newLineNum}`);
                     }
 
                     return rows;
                 })(),
 
-                // Context after - use the final line number after all changes
+                // Context after (with normalized tabs)
+                // Use the final line number after all changes
                 // If all lines were deleted (afterEndLine < startLine), context starts at startLine
-                ...contextAfter.map((line, idx) => {
+                ...normalizedContextAfter.map((line, idx) => {
                     const contextAfterStartLine = afterEndLine >= startLine ? (afterEndLine + 1) : startLine;
                     const lineNum = contextAfterStartLine + idx;
                     return React.createElement(UnifiedDiffLine, {
