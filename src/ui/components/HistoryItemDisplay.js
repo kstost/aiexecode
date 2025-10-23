@@ -131,7 +131,7 @@ function CodeResultDisplay({ item }) {
     );
 }
 
-function StandardDisplay({ item, isPending, hasFollowingResult, nextItem }) {
+function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLastInBatch = false }) {
     const { type, text, operations = [], toolName, toolInput, args } = item;
     const config = getTypeConfig(type);
 
@@ -413,8 +413,8 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem }) {
 
     // tool_start는 다음에 tool_result가 있으면 marginBottom 0, 없으면 1
     // tool_result는 marginTop 0
-    // const marginBottom = (type === 'tool_start' && hasFollowingResult) ? 0 : 1;
-    const marginBottom = 1;//(type === 'tool_start' && hasFollowingResult) ? 0 : 1;
+    // 배치의 마지막 항목이면 marginBottom 0
+    const marginBottom = isLastInBatch ? 0 : 1;
     const marginTop = 0;//type === 'tool_result' ? 0 : undefined;
 
     if (false) {
@@ -633,7 +633,7 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem }) {
     );
 }
 
-export function HistoryItemDisplay({ item, isPending = false, terminalWidth, nextItem }) {
+export function HistoryItemDisplay({ item, isPending = false, terminalWidth, nextItem, isLastInBatch = false }) {
     if (item.type === 'code_execution' && item.code && item.language) {
         const hasFollowingResult = nextItem && nextItem.type === 'code_result';
         return React.createElement(CodeExecutionDisplay, { item, hasFollowingResult });
@@ -646,7 +646,7 @@ export function HistoryItemDisplay({ item, isPending = false, terminalWidth, nex
     // tool_start 다음에 tool_result가 오는지 확인
     const hasFollowingResult = item.type === 'tool_start' && nextItem && nextItem.type === 'tool_result';
 
-    const result = React.createElement(StandardDisplay, { item, isPending, hasFollowingResult, nextItem });
+    const result = React.createElement(StandardDisplay, { item, isPending, hasFollowingResult, nextItem, isLastInBatch });
 
     return result;
 }

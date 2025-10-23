@@ -117,12 +117,14 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
                 const newItems = [...current];
                 transformedInitialHistory.forEach((item, index) => {
                     const nextItem = transformedInitialHistory[index + 1];
+                    const isLastInBatch = index === transformedInitialHistory.length - 1;
                     newItems.push(
                         React.createElement(HistoryItemDisplay, {
                             key: `initial-${index}`,
                             item,
                             terminalWidth,
-                            nextItem
+                            nextItem,
+                            isLastInBatch
                         })
                     );
                 });
@@ -157,7 +159,8 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
                     key: `static-${itemKey}`,
                     item: userEvent,
                     terminalWidth,
-                    nextItem: null
+                    nextItem: null,
+                    isLastInBatch: true
                 })
             ]);
         }
@@ -271,7 +274,8 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
                             key: `static-${itemKey}`,
                             item: transformed,
                             terminalWidth,
-                            nextItem: null
+                            nextItem: null,
+                            isLastInBatch: true
                         })
                     ]);
                     setHistory(hist => [...hist, transformed]);
@@ -314,11 +318,13 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
                         ...current,
                         ...completedPair.map((item, index) => {
                             const nextItem = completedPair[index + 1];
+                            const isLastInBatch = index === completedPair.length - 1;
                             return React.createElement(HistoryItemDisplay, {
                                 key: `static-${startKey + index}`,
                                 item,
                                 terminalWidth,
-                                nextItem
+                                nextItem,
+                                isLastInBatch
                             });
                         })
                     ]);
@@ -337,7 +343,8 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
                             key: `static-${itemKey}`,
                             item: transformed,
                             terminalWidth,
-                            nextItem: null
+                            nextItem: null,
+                            isLastInBatch: true
                         })
                     ]);
                     setHistory(hist => [...hist, transformed]);
@@ -357,7 +364,8 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
                     key: `static-${itemKey}`,
                     item: transformed,
                     terminalWidth,
-                    nextItem: null
+                    nextItem: null,
+                    isLastInBatch: true
                 })
             ]);
         }
@@ -399,11 +407,13 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
                         ...current,
                         ...pending.map((item, index) => {
                             const nextItem = pending[index + 1];
+                            const isLastInBatch = index === pending.length - 1;
                             return React.createElement(HistoryItemDisplay, {
                                 key: `static-${startKey + index}`,
                                 item,
                                 terminalWidth,
-                                nextItem
+                                nextItem,
+                                isLastInBatch
                             });
                         })
                     ]);
