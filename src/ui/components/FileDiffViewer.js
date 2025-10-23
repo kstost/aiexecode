@@ -5,7 +5,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { common, createLowlight } from 'lowlight';
-import { diffLines } from 'diff';
+import { diffLines, diffWords } from 'diff';
 import { createDebugLogger } from '../../util/debug_log.js';
 
 const lowlight = createLowlight(common);
@@ -150,11 +150,33 @@ function parseContentLines(oldContent, newContent) {
 
 /**
  * Calculate diff between before and after content using diffLines algorithm
+ * For single-line changes, uses word-level diff for better visualization
  */
 function calculateDiff(beforeLines, afterLines) {
     const beforeText = beforeLines.join('\n');
     const afterText = afterLines.join('\n');
 
+    // Special case: if both are single lines or contain no newlines, use word-level diff
+    const isSingleLineDiff = beforeLines.length === 1 && afterLines.length === 1;
+
+    if (isSingleLineDiff) {
+        const wordDiff = diffWords(beforeText, afterText);
+        const result = [];
+
+        for (const change of wordDiff) {
+            if (change.added) {
+                result.push({ type: 'added', newLine: change.value });
+            } else if (change.removed) {
+                result.push({ type: 'removed', oldLine: change.value });
+            } else {
+                result.push({ type: 'unchanged', oldLine: change.value, newLine: change.value });
+            }
+        }
+
+        return result;
+    }
+
+    // Standard line-based diff for multi-line content
     const changes = diffLines(beforeText, afterText);
     const result = [];
 
@@ -177,6 +199,45 @@ function calculateDiff(beforeLines, afterLines) {
     }
 
     return result;
+}
+
+/**
+ * Render a line with inline word-level diff highlighting
+ */
+function InlineDiffLine({ lineNum, parts, prefix, lineType }) {
+    const lineNumStr = lineNum !== null ? `${String(lineNum).padStart(4, ' ')} ` : '     ';
+
+    // Background color based on line type
+    const bgColor = lineType === 'removed' ? '#692121ff' : lineType === 'added' ? '#216931ff' : undefined;
+    const lineNumColor = lineType === 'removed' ? '#c0a6a6ff' : lineType === 'added' ? '#9fbca5ff' : '#898989ff';
+
+    return React.createElement(Box, { backgroundColor: bgColor, width: '100%' },
+        React.createElement(Text, { color: lineNumColor }, lineNumStr),
+        React.createElement(Text, { color: '#ffffff' }, `${prefix} `),
+        ...parts.map((part, idx) => {
+            // Highlight changed parts with different background
+            if (part.type === 'removed') {
+                return React.createElement(Text, {
+                    key: idx,
+                    color: '#ffffff',
+                    backgroundColor: '#8b0000ff',
+                    bold: true
+                }, part.text);
+            } else if (part.type === 'added') {
+                return React.createElement(Text, {
+                    key: idx,
+                    color: '#ffffff',
+                    backgroundColor: '#006400ff',
+                    bold: true
+                }, part.text);
+            } else {
+                return React.createElement(Text, {
+                    key: idx,
+                    color: '#ffffff'
+                }, part.text);
+            }
+        })
+    );
 }
 
 /**
@@ -303,47 +364,96 @@ export function FileDiffViewer({ filePath, startLine, endLine, oldContent, newCo
                     let oldLineNum = startLine;
                     let newLineNum = startLine;
 
-                    for (let i = 0; i < diff.length; i++) {
-                        const item = diff[i];
+                    // Detect if this is a word-level diff (all items are fragments, not full lines)
+                    const isWordDiff = diff.length > 0 && diff.every(item =>
+                        !item.oldLine?.includes('\n') && !item.newLine?.includes('\n')
+                    );
 
-                        if (item.type === 'removed') {
+                    if (isWordDiff) {
+                        // Render as inline diff: old line first, then new line
+                        const oldParts = [];
+                        const newParts = [];
+
+                        for (const item of diff) {
+                            if (item.type === 'removed') {
+                                oldParts.push({ text: item.oldLine, type: 'removed' });
+                            } else if (item.type === 'added') {
+                                newParts.push({ text: item.newLine, type: 'added' });
+                            } else {
+                                oldParts.push({ text: item.oldLine, type: 'unchanged' });
+                                newParts.push({ text: item.newLine, type: 'unchanged' });
+                            }
+                        }
+
+                        // Render old line (with removed parts highlighted)
+                        if (oldParts.length > 0) {
                             rows.push(
-                                React.createElement(UnifiedDiffLine, {
-                                    key: `diff-removed-${oldLineNum}-${i}`,
-                                    oldLineNum: oldLineNum,
-                                    newLineNum: null,
-                                    content: item.oldLine,
-                                    type: 'removed',
-                                    language
+                                React.createElement(InlineDiffLine, {
+                                    key: 'inline-old',
+                                    lineNum: oldLineNum,
+                                    parts: oldParts,
+                                    prefix: '-',
+                                    lineType: 'removed'
                                 })
                             );
-                            oldLineNum++;
-                        } else if (item.type === 'added') {
+                        }
+
+                        // Render new line (with added parts highlighted)
+                        if (newParts.length > 0) {
                             rows.push(
-                                React.createElement(UnifiedDiffLine, {
-                                    key: `diff-added-${newLineNum}-${i}`,
-                                    oldLineNum: null,
-                                    newLineNum: newLineNum,
-                                    content: item.newLine,
-                                    type: 'added',
-                                    language
+                                React.createElement(InlineDiffLine, {
+                                    key: 'inline-new',
+                                    lineNum: newLineNum,
+                                    parts: newParts,
+                                    prefix: '+',
+                                    lineType: 'added'
                                 })
                             );
-                            newLineNum++;
-                        } else if (item.type === 'unchanged') {
-                            // Unchanged lines in the edited range
-                            rows.push(
-                                React.createElement(UnifiedDiffLine, {
-                                    key: `diff-unchanged-${oldLineNum}-${i}`,
-                                    oldLineNum: oldLineNum,
-                                    newLineNum: newLineNum,
-                                    content: item.oldLine,
-                                    type: 'unchanged',
-                                    language
-                                })
-                            );
-                            oldLineNum++;
-                            newLineNum++;
+                        }
+                    } else {
+                        // Standard line-based diff rendering
+                        for (let i = 0; i < diff.length; i++) {
+                            const item = diff[i];
+
+                            if (item.type === 'removed') {
+                                rows.push(
+                                    React.createElement(UnifiedDiffLine, {
+                                        key: `diff-removed-${oldLineNum}-${i}`,
+                                        oldLineNum: oldLineNum,
+                                        newLineNum: null,
+                                        content: item.oldLine,
+                                        type: 'removed',
+                                        language
+                                    })
+                                );
+                                oldLineNum++;
+                            } else if (item.type === 'added') {
+                                rows.push(
+                                    React.createElement(UnifiedDiffLine, {
+                                        key: `diff-added-${newLineNum}-${i}`,
+                                        oldLineNum: null,
+                                        newLineNum: newLineNum,
+                                        content: item.newLine,
+                                        type: 'added',
+                                        language
+                                    })
+                                );
+                                newLineNum++;
+                            } else if (item.type === 'unchanged') {
+                                // Unchanged lines in the edited range
+                                rows.push(
+                                    React.createElement(UnifiedDiffLine, {
+                                        key: `diff-unchanged-${oldLineNum}-${i}`,
+                                        oldLineNum: oldLineNum,
+                                        newLineNum: newLineNum,
+                                        content: item.oldLine,
+                                        type: 'unchanged',
+                                        language
+                                    })
+                                );
+                                oldLineNum++;
+                                newLineNum++;
+                            }
                         }
                     }
 

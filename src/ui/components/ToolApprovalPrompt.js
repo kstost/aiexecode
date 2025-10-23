@@ -427,6 +427,13 @@ function renderToolArgs(toolName, args, mcpToolInfo = null) {
                     const actualLines = content === '' ? [] :
                         (content.endsWith('\n') ? lines.slice(0, -1) : lines);
 
+                    // Extract the FULL lines that contain old_string
+                    const affectedLines = actualLines.slice(startLine - 1, endLine);
+                    const fullOldContent = affectedLines.join('\n');
+
+                    // Create full new content by replacing old_string with new_string
+                    const fullNewContent = fullOldContent.replace(oldString, newString);
+
                     // Extract context (2 lines before and after)
                     const contextLines = 2;
                     const contextStartIdx = Math.max(0, startLine - 1 - contextLines);
@@ -438,8 +445,8 @@ function renderToolArgs(toolName, args, mcpToolInfo = null) {
                     setDiffData({
                         startLine: startLine,
                         endLine: endLine,
-                        oldContent: oldString,
-                        newContent: newString,
+                        oldContent: fullOldContent,
+                        newContent: fullNewContent,
                         contextBefore: ctxBefore,
                         contextAfter: ctxAfter,
                         contextStartLine: contextStartIdx + 1

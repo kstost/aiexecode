@@ -362,6 +362,16 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem }) {
                         const actualLines = content === '' ? [] :
                             (content.endsWith('\n') ? lines.slice(0, -1) : lines);
 
+                        // Extract the FULL lines that contain old_string
+                        const affectedLines = actualLines.slice(startLine - 1, endLine);
+                        const fullOldContent = affectedLines.join('\n');
+
+                        // Create full new content by replacing old_string with new_string
+                        const fullNewContent = fullOldContent.replace(effectiveArgs.old_string, effectiveArgs.new_string);
+
+                        debugLog(`Full old content: ${fullOldContent.substring(0, 100)}...`);
+                        debugLog(`Full new content: ${fullNewContent.substring(0, 100)}...`);
+
                         // Extract context (2 lines before and after)
                         const contextLines = 2;
                         const contextStartIdx = Math.max(0, startLine - 1 - contextLines);
@@ -375,8 +385,8 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem }) {
                         diffData = {
                             loaded: true,
                             hasContent: true,
-                            oldContent: effectiveArgs.old_string,
-                            newContent: effectiveArgs.new_string,
+                            oldContent: fullOldContent,
+                            newContent: fullNewContent,
                             contextBefore: ctxBefore,
                             contextAfter: ctxAfter,
                             contextStartLine: contextStartIdx + 1,
@@ -508,7 +518,7 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem }) {
             debugLog(`  filePath: ${effectiveArgs.file_path}`);
             debugLog(`  startLine: ${diffData.startLine}, endLine: ${diffData.endLine}`);
             debugLog(`  oldContent length: ${diffData.oldContent?.length || 0}`);
-            debugLog(`  newContent length: ${effectiveArgs.new_string?.length || 0}`);
+            debugLog(`  newContent length: ${diffData.newContent?.length || 0}`);
 
             const result = React.createElement(Box, { flexDirection: "column", marginBottom, marginTop, width: "100%" },
                 React.createElement(Box, { flexDirection: "row" },
@@ -523,7 +533,7 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem }) {
                         startLine: diffData.startLine,
                         endLine: diffData.endLine,
                         oldContent: diffData.oldContent,
-                        newContent: effectiveArgs.new_string,
+                        newContent: diffData.newContent,
                         contextBefore: diffData.contextBefore,
                         contextAfter: diffData.contextAfter,
                         contextStartLine: diffData.contextStartLine
