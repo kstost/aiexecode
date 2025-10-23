@@ -2,28 +2,12 @@
 // 파일 편집 전 무결성을 검증하여 안전한 코드 편집을 보장합니다.
 
 import { promises as fs } from 'fs';
-import { join, dirname } from 'path';
 import crypto from 'crypto';
-import { DEBUG_LOG_DIR } from '../util/config.js';
+import { createDebugLogger } from '../util/debug_log.js';
 
 function consolelog() { }
 
-// Debug logging configuration
-const ENABLE_DEBUG_LOG = true;
-const LOG_FILE = join(DEBUG_LOG_DIR, 'file_integrity.log');
-
-// Debug logging helper
-async function debugLog(message) {
-    if (!ENABLE_DEBUG_LOG) return;
-    try {
-        // 디렉토리가 없으면 생성
-        await fs.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => {});
-        const timestamp = new Date().toISOString();
-        await fs.appendFile(LOG_FILE, `[${timestamp}] ${message}\n`).catch(() => {});
-    } catch (err) {
-        // Ignore logging errors
-    }
-}
+const debugLog = createDebugLogger('file_integrity.log', 'file_integrity');
 /**
  * 파일 무결성 추적 시스템
  * 각 세션별로 파일 콘텐츠 해시를 추적하고, 편집 전 파일 변경 여부를 검증합니다.

@@ -1,25 +1,10 @@
 import { promises as fs } from 'fs';
-import { dirname, resolve, join } from 'path';
+import { dirname, resolve } from 'path';
 import * as diff from 'diff';
 import { assertFileIntegrity, trackFileRead, saveFileSnapshot } from '../system/file_integrity.js';
-import { DEBUG_LOG_DIR } from '../util/config.js';
+import { createDebugLogger } from '../util/debug_log.js';
 
-// Debug logging configuration
-const ENABLE_DEBUG_LOG = true;
-const LOG_FILE = join(DEBUG_LOG_DIR, 'code_editor.log');
-
-// Debug logging helper
-async function debugLog(message) {
-    if (!ENABLE_DEBUG_LOG) return;
-    try {
-        // 디렉토리가 없으면 생성
-        await fs.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => {});
-        const timestamp = new Date().toISOString();
-        await fs.appendFile(LOG_FILE, `[${timestamp}] ${message}\n`).catch(() => {});
-    } catch (err) {
-        // Ignore logging errors
-    }
-}
+const debugLog = createDebugLogger('code_editor.log', 'code_editor');
 
 // 이 파일은 파일을 만들고 수정할 때 필요한 기본 동작들을 제공합니다.
 // Orchestrator가 제안한 변경 사항을 실제 파일 시스템에 반영할 때 이 도구들을 호출합니다.

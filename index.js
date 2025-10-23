@@ -3,7 +3,7 @@
 import { dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { initializeMCPIntegration } from "./src/system/mcp_integration.js";
-import { ensureConfigDirectory, loadSettings, SETTINGS_FILE, PAYLOAD_LOG_DIR } from "./src/util/config.js";
+import { ensureConfigDirectory, loadSettings, SETTINGS_FILE, PAYLOAD_LOG_DIR, DEBUG_LOG_DIR } from "./src/util/config.js";
 import { runSession } from "./src/system/session.js";
 import { CommandRegistry, isCommand } from "./src/system/command_parser.js";
 import { loadCommands } from "./src/system/command_loader.js";
@@ -26,7 +26,7 @@ const program = new Command();
 program
     .name('aiexecode')
     .description('AI-powered autonomous coding agent that executes development tasks through natural language missions')
-    .version('1.0.32')
+    .version('1.0.33')
     .option('-c, --continue <session_id>', 'Continue from previous session (16-char hex session ID)')
     .option('--viewer', 'Start payload viewer web server')
     .option('-p, --port <port>', 'Port for payload viewer (default: 3300)', '3300')
@@ -225,6 +225,7 @@ if (dependencyCheck.warnings && dependencyCheck.warnings.length > 0) {
 
 // 임시 폴더 정리
 fs.rmSync(PAYLOAD_LOG_DIR, { recursive: true, force: true }); // 홈 디렉토리의 .aiexe/payload_log
+fs.rmSync(DEBUG_LOG_DIR, { recursive: true, force: true }); // cwd의 .aiexe/debuglog
 
 // 설정 로드
 await ensureConfigDirectory();
@@ -426,7 +427,7 @@ uiInstance = startUI({
     onExit: handleExit,
     commands: commandList,
     model: currentModel,
-    version: '1.0.32',
+    version: '1.0.33',
     initialHistory,
     reasoningEffort: currentReasoningEffort
 });

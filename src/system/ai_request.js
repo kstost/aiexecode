@@ -9,18 +9,9 @@ import { ensureConfigDirectory, loadSettings, SETTINGS_FILE } from "../util/conf
 import { getClaudeMaxTokens, DEFAULT_CLAUDE_MODEL } from "../config/claude_models.js";
 import { getReasoningModels, supportsReasoningEffort, DEFAULT_OPENAI_MODEL } from "../config/openai_models.js";
 import { formatReadFileStdout } from "../util/output_formatter.js";
-import { ENABLE_DEBUG_LOG } from "../config/config.js";
+import { createDebugLogger } from "../util/debug_log.js";
 
-// Debug logging helper
-function debugLog(message) {
-    if (!ENABLE_DEBUG_LOG) return;
-    try {
-        const timestamp = new Date().toISOString();
-        fs.appendFileSync('debug.txt', `[${timestamp}] ${message}\n`);
-    } catch (err) {
-        // Ignore logging errors
-    }
-}
+const debugLog = createDebugLogger('ai_request.log', 'ai_request');
 
 // Planner·Orchestrator·Verifier가 동일한 방식으로 모델을 호출할 수 있도록 공통 게이트웨이를 제공합니다.
 // OpenAI 및 Anthropic SDK를 사용하기 위한 환경변수를 불러옵니다.

@@ -1,23 +1,14 @@
 import { spawn } from 'child_process';
-import { unlinkSync, promises as fs, appendFileSync } from 'fs';
+import { unlinkSync, promises as fs } from 'fs';
 import { join, isAbsolute, normalize } from 'path';
 import { homedir } from 'os';
 import dotenv from "dotenv";
 import { installRequiredPackages } from '../ai_based/pip_package_installer.js';
 import { write_file } from '../tools/code_editor.js';
 import { CONFIG_DIR, ensureConfigDirectory } from '../util/config.js';
-import { ENABLE_DEBUG_LOG } from '../config/config.js';
+import { createDebugLogger } from '../util/debug_log.js';
 
-// Debug logging helper
-function debugLog(message) {
-    if (!ENABLE_DEBUG_LOG) return;
-    try {
-        const timestamp = new Date().toISOString();
-        appendFileSync('debug.txt', `[${timestamp}] ${message}\n`);
-    } catch (err) {
-        // Ignore logging errors
-    }
-}
+const debugLog = createDebugLogger('code_executer.log', 'code_executer');
 
 // 이 파일은 파이썬과 쉘 코드를 실행하고 필요한 패키지를 설치하는 역할을 담당합니다.
 // Orchestrator가 run_python_code와 bash 도구로 생산한 스크립트를 실제 환경에서 실행할 때 이 모듈을 직접 호출합니다.

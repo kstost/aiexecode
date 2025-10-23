@@ -8,15 +8,22 @@ import { Header } from './Header.js';
 import { HistoryItemDisplay } from './HistoryItemDisplay.js';
 import { useUIState } from '../contexts/UIStateContext.js';
 import { useAppContext } from '../contexts/AppContext.js';
+import { createDebugLogger } from '../../util/debug_log.js';
+
+const debugLog = createDebugLogger('ui_components.log', 'MainContent');
 
 export const MainContent = React.memo(function MainContent() {
+    debugLog('MainContent rendering');
     const appContext = useAppContext();
     const uiState = useUIState();
 
     const { history, pendingHistoryItems, mainAreaWidth, historyRemountKey } = uiState;
+    debugLog(`MainContent - history: ${history.length}, pending: ${pendingHistoryItems.length}, width: ${mainAreaWidth}`);
 
     // Memoize static items to prevent re-creation on every render
-    const staticItems = useMemo(() => [
+    const staticItems = useMemo(() => {
+        debugLog(`MainContent - rebuilding staticItems with ${history.length} history items`);
+        return [
         React.createElement(Header, {
             key: "app-header",
             version: appContext.version
@@ -29,7 +36,8 @@ export const MainContent = React.memo(function MainContent() {
                 terminalWidth: mainAreaWidth
             })
         )
-    ], [history, mainAreaWidth, appContext.version]);
+    ];
+    }, [history, mainAreaWidth, appContext.version]);
 
     return React.createElement(React.Fragment, null,
         // Static area for immutable history with key for controlled remounting

@@ -15,27 +15,10 @@ import fs from 'fs';
 import { resolve, join, dirname } from 'path';
 import { DEBUG_LOG_DIR } from '../../util/config.js';
 import { createHash } from 'crypto';
+import { createDebugLogger } from '../../util/debug_log.js';
 
-// Debug logging configuration
-const ENABLE_DEBUG_LOG = true;
-const LOG_FILE = join(DEBUG_LOG_DIR, 'ui_history_display.log');
+const debugLog = createDebugLogger('ui_components.log', 'HistoryItemDisplay');
 const OLDSTRING_LOG_FILE = join(DEBUG_LOG_DIR, 'oldstring.txt');
-
-// Debug logging helper
-function debugLog(message) {
-    if (!ENABLE_DEBUG_LOG) return;
-    try {
-        // 디렉토리가 없으면 생성
-        const dir = dirname(LOG_FILE);
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-        }
-        const timestamp = new Date().toISOString();
-        fs.appendFileSync(LOG_FILE, `[${timestamp}] ${message}\n`);
-    } catch (err) {
-        // Ignore logging errors
-    }
-}
 
 // Evidence logging for old_string NOT FOUND issues
 function logOldStringEvidence(evidence) {

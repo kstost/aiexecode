@@ -16,30 +16,11 @@ import { logSystem, logInfo, logSuccess, logWarning, logError, logAssistantMessa
 import { requiresApproval, requestApproval } from "./tool_approval.js";
 import { setCurrentSession, saveFileSnapshot, getFileSnapshot } from "./file_integrity.js";
 import { abortCurrentRequest } from "./ai_request.js";
-import { promises as fs, appendFileSync, mkdirSync } from 'fs';
-import { resolve, join, dirname } from 'path';
-import { existsSync } from 'fs';
-import { ENABLE_DEBUG_LOG } from '../config/config.js';
-import { DEBUG_LOG_DIR } from '../util/config.js';
+import { promises as fs } from 'fs';
+import { resolve } from 'path';
+import { createDebugLogger } from '../util/debug_log.js';
 
-// Debug logging configuration
-const LOG_FILE = join(DEBUG_LOG_DIR, 'session.log');
-
-// Debug logging helper
-function debugLog(message) {
-    if (!ENABLE_DEBUG_LOG) return;
-    try {
-        // 디렉토리가 없으면 생성 (동기)
-        const logDir = dirname(LOG_FILE);
-        if (!existsSync(logDir)) {
-            mkdirSync(logDir, { recursive: true });
-        }
-        const timestamp = new Date().toISOString();
-        appendFileSync(LOG_FILE, `[${timestamp}] ${message}\n`);
-    } catch (err) {
-        // Ignore logging errors
-    }
-}
+const debugLog = createDebugLogger('session.log', 'session');
 
 /**
  * Verifier 사용 여부를 제어하는 상수
@@ -147,7 +128,7 @@ async function processToolCall(name, argument, toolMap, sessionID) {
     }
 
     // 승인이 필요한 도구인지 확인 (args 전달하여 실패 여부 판단)
-    const approvalCheck = requiresApproval(name, argument);
+    const approvalCheck = await requiresApproval(name, argument);
 
     // 승인이 필요한 경우 - 승인 요청을 먼저 처리 (History에 표시되기 전)
     if (approvalCheck === true) {
@@ -240,7 +221,7 @@ async function processCodeExecution(name, argument, toolMap) {
     debugLog(`[processCodeExecution] Processing ${codeType} execution`);
 
     // 승인이 필요한 도구인지 확인 (args 전달하여 실패 여부 판단)
-    const approvalCheck = requiresApproval(name, argument);
+    const approvalCheck = await requiresApproval(name, argument);
 
     // 승인이 필요한 경우 - 승인 요청을 먼저 처리 (History에 표시되기 전)
     if (approvalCheck === true) {

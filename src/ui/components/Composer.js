@@ -9,12 +9,18 @@ import { LoadingIndicator } from './LoadingIndicator.js';
 import { AgenticProgressDisplay } from './AgenticProgressDisplay.js';
 import { SessionSpinner } from './SessionSpinner.js';
 import { useUIState, StreamingState } from '../contexts/UIStateContext.js';
+import { createDebugLogger } from '../../util/debug_log.js';
+
+const debugLog = createDebugLogger('ui_components.log', 'Composer');
 
 export function Composer({ onSubmit, onClearScreen, commands = [], buffer }) {
+    debugLog('Composer rendering');
     const uiState = useUIState();
 
     const showLoading = uiState.streamingState === StreamingState.Responding ||
         uiState.streamingState === StreamingState.Executing;
+
+    debugLog(`Composer - streamingState: ${uiState.streamingState}, showLoading: ${showLoading}, operations: ${uiState.operations.length}`);
 
     return React.createElement(Box, {
         flexDirection: "column",

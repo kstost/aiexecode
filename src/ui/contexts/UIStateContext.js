@@ -3,6 +3,9 @@
  */
 
 import React, { createContext, useContext, useState, useRef } from 'react';
+import { createDebugLogger } from '../../util/debug_log.js';
+
+const debugLog = createDebugLogger('ui_contexts.log', 'UIStateContext');
 
 const UIStateContext = createContext(null);
 
@@ -16,6 +19,8 @@ export const StreamingState = {
 };
 
 export function UIStateProvider({ children, initialState = {} }) {
+    debugLog(`UIStateProvider initializing - history items: ${(initialState.history || []).length}`);
+
     const [history, setHistory] = useState(initialState.history || []);
     const [pendingHistoryItems, setPendingHistoryItems] = useState([]);
     const [streamingState, setStreamingState] = useState(StreamingState.Idle);
@@ -32,6 +37,8 @@ export function UIStateProvider({ children, initialState = {} }) {
 
     const rootUiRef = useRef(null);
     const mainControlsRef = useRef(null);
+
+    debugLog('UIStateProvider initialized with all state variables');
 
     const value = {
         // History
@@ -54,6 +61,7 @@ export function UIStateProvider({ children, initialState = {} }) {
         operations,
         setOperations,
         addOperation: (operation) => {
+            debugLog(`addOperation: ${operation.type || 'unknown'} - ${operation.name || 'unnamed'}`);
             setOperations(prev => [...prev, {
                 ...operation,
                 id: Date.now(),
@@ -62,11 +70,13 @@ export function UIStateProvider({ children, initialState = {} }) {
             }]);
         },
         updateOperation: (id, updates) => {
+            debugLog(`updateOperation: id=${id}, updates=${JSON.stringify(updates)}`);
             setOperations(prev => prev.map(op =>
                 op.id === id ? { ...op, ...updates } : op
             ));
         },
         completeOperation: (id) => {
+            debugLog(`completeOperation: id=${id}`);
             setOperations(prev => prev.map(op =>
                 op.id === id ? { ...op, status: 'completed', endTime: Date.now() } : op
             ));

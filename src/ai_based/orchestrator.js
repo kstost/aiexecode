@@ -1,6 +1,5 @@
 import dotenv from "dotenv";
 // 이 파일은 계획을 실제 행동으로 옮기기 위해 어떤 도구를 호출할지 결정합니다.
-import fs from 'fs';
 import path from 'path';
 import { truncateWithOmit } from "../util/text_formatter.js";
 import { createSystemMessage } from "../util/prompt_loader.js";
@@ -12,20 +11,11 @@ import { fetchWebPageSchema } from "../tools/web_downloader.js";
 import { responseMessageSchema } from "../tools/response_message.js";
 import { ripgrepSchema } from "../tools/ripgrep.js";
 import { globSearchSchema } from "../tools/glob.js";
-import { ENABLE_DEBUG_LOG } from "../config/config.js";
 import { loadSettings } from "../util/config.js";
+import { createDebugLogger } from "../util/debug_log.js";
 dotenv.config({ quiet: true });
 
-// Debug logging helper
-function debugLog(message) {
-    if (!ENABLE_DEBUG_LOG) return;
-    try {
-        const timestamp = new Date().toISOString();
-        fs.appendFileSync('debug.txt', `[${timestamp}] ${message}\n`);
-    } catch (err) {
-        // Ignore logging errors
-    }
-}
+const debugLog = createDebugLogger('orchestrator.log', 'orchestrator');
 
 function consolelog() { }
 

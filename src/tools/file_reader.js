@@ -1,24 +1,9 @@
 import { promises as fs } from 'fs';
-import { resolve, join, dirname } from 'path';
+import { resolve } from 'path';
 import { trackFileRead, saveFileSnapshot } from '../system/file_integrity.js';
-import { DEBUG_LOG_DIR } from '../util/config.js';
+import { createDebugLogger } from '../util/debug_log.js';
 
-// Debug logging configuration
-const ENABLE_DEBUG_LOG = true;
-const LOG_FILE = join(DEBUG_LOG_DIR, 'file_reader.log');
-
-// Debug logging helper
-async function debugLog(message) {
-    if (!ENABLE_DEBUG_LOG) return;
-    try {
-        // 디렉토리가 없으면 생성
-        await fs.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => {});
-        const timestamp = new Date().toISOString();
-        await fs.appendFile(LOG_FILE, `[${timestamp}] ${message}\n`).catch(() => {});
-    } catch (err) {
-        // Ignore logging errors
-    }
-}
+const debugLog = createDebugLogger('file_reader.log', 'file_reader');
 
 // 이 파일은 파일을 읽고 검색하는 모든 보조 기능을 모아 둡니다.
 // Orchestrator가 코드 구조를 파악하고 Verifier가 증거를 수집할 때 공통적으로 사용됩니다.

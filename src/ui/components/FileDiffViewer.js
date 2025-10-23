@@ -6,28 +6,11 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import { common, createLowlight } from 'lowlight';
 import { diffLines } from 'diff';
-import { promises as fs } from 'fs';
-import { join, dirname } from 'path';
-import { DEBUG_LOG_DIR } from '../../util/config.js';
+import { createDebugLogger } from '../../util/debug_log.js';
 
 const lowlight = createLowlight(common);
 
-// Debug logging configuration
-const ENABLE_DEBUG_LOG = true;
-const LOG_FILE = join(DEBUG_LOG_DIR, 'ui_file_diff_viewer.log');
-
-// Debug logging helper
-async function debugLog(message) {
-    if (!ENABLE_DEBUG_LOG) return;
-    try {
-        // 디렉토리가 없으면 생성
-        await fs.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => {});
-        const timestamp = new Date().toISOString();
-        await fs.appendFile(LOG_FILE, `[${timestamp}] ${message}\n`).catch(() => {});
-    } catch (err) {
-        // Ignore logging errors
-    }
-}
+const debugLog = createDebugLogger('ui_components.log', 'FileDiffViewer');
 
 /**
  * Theme color mapping for syntax highlighting

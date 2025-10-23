@@ -1,24 +1,9 @@
 import { glob } from 'glob';
-import { resolve, relative, join, dirname } from 'path';
+import { resolve, relative } from 'path';
 import { promises as fs } from 'fs';
-import { DEBUG_LOG_DIR } from '../util/config.js';
+import { createDebugLogger } from '../util/debug_log.js';
 
-// Debug logging configuration
-const ENABLE_DEBUG_LOG = true;
-const LOG_FILE = join(DEBUG_LOG_DIR, 'glob.log');
-
-// Debug logging helper
-async function debugLog(message) {
-    if (!ENABLE_DEBUG_LOG) return;
-    try {
-        // 디렉토리가 없으면 생성
-        await fs.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => {});
-        const timestamp = new Date().toISOString();
-        await fs.appendFile(LOG_FILE, `[${timestamp}] ${message}\n`).catch(() => {});
-    } catch (err) {
-        // Ignore logging errors
-    }
-}
+const debugLog = createDebugLogger('glob.log', 'glob');
 
 // 이 파일은 glob 패턴을 사용하여 파일을 검색하는 기능을 제공합니다.
 

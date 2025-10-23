@@ -1,30 +1,14 @@
 // 세션별 실행 기록을 파일로 저장하고 로드하는 모듈
 import fs from 'fs/promises';
-import { promises as fsPromises } from 'fs';
 import { existsSync, mkdirSync } from 'fs';
-import { join, resolve, dirname } from 'path';
+import { join, resolve } from 'path';
 import chalk from 'chalk';
 import { formatToolCall, formatToolResult, getToolDisplayName, getToolDisplayConfig } from './tool_registry.js';
-import { DEBUG_LOG_DIR } from '../util/config.js';
+import { createDebugLogger } from '../util/debug_log.js';
 
 const MAX_HISTORY_SESSIONS = 20; // 최대 보관 세션 수
 
-// Debug logging configuration
-const ENABLE_DEBUG_LOG = true;
-const LOG_FILE = join(DEBUG_LOG_DIR, 'session_memory.log');
-
-// Debug logging helper
-async function debugLog(message) {
-    if (!ENABLE_DEBUG_LOG) return;
-    try {
-        // 디렉토리가 없으면 생성
-        await fsPromises.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => {});
-        const timestamp = new Date().toISOString();
-        await fsPromises.appendFile(LOG_FILE, `[${timestamp}] ${message}\n`).catch(() => {});
-    } catch (err) {
-        // Ignore logging errors
-    }
-}
+const debugLog = createDebugLogger('session_memory.log', 'session_memory');
 
 // 현재 작업 디렉토리 기준 세션 디렉토리 경로 생성
 function getSessionDir(sessionID) {
