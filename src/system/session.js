@@ -134,9 +134,9 @@ function processMessageOutput(output) {
  * 일반 도구 호출을 처리하는 함수
  */
 async function processToolCall(name, argument, toolMap, sessionID) {
-    // edit_file_range인 경우 파일 스냅샷을 승인 요청 전에 저장
+    // edit_file_range, edit_file_replace인 경우 파일 스냅샷을 승인 요청 전에 저장
     // (ToolApprovalPrompt에서 DiffViewer 표시를 위해 필요)
-    if (name === 'edit_file_range' && argument.file_path) {
+    if ((name === 'edit_file_range' || name === 'edit_file_replace') && argument.file_path) {
         try {
             const fileContent = await fs.readFile(argument.file_path, 'utf8');
             saveFileSnapshot(argument.file_path, fileContent);
@@ -149,15 +149,7 @@ async function processToolCall(name, argument, toolMap, sessionID) {
     // 승인이 필요한 도구인지 확인 (args 전달하여 실패 여부 판단)
     const approvalCheck = requiresApproval(name, argument);
 
-    // 도구 호출 메시지 먼저 출력
-    logToolCall(name, argument);
-
-    // 승인이 스킵되는 경우 (확실히 실패할 것으로 예상) - 도구 호출 메시지 다음에 출력
-    if (approvalCheck && approvalCheck.skipApproval) {
-        logInfo(`Tool approval skipped: ${approvalCheck.reason}`);
-    }
-
-    // 승인이 필요한 경우
+    // 승인이 필요한 경우 - 승인 요청을 먼저 처리 (History에 표시되기 전)
     if (approvalCheck === true) {
         const approved = await requestApproval(name, argument);
         if (!approved) {
@@ -168,6 +160,8 @@ async function processToolCall(name, argument, toolMap, sessionID) {
             const stdout = formatToolStdout(name, errorResult);
             const exeResult = prepareExecutionResult(stdout, '', 1);
 
+            // 거부된 경우에만 도구 호출과 결과를 History에 표시
+            logToolCall(name, argument);
             logToolResult(name, exeResult.stdout, errorResult, argument);
 
             return {
@@ -176,6 +170,14 @@ async function processToolCall(name, argument, toolMap, sessionID) {
                 content: `${name}(${JSON.stringify(argument, null, 2)})`
             };
         }
+    }
+
+    // 승인 완료 후 또는 승인 불필요한 경우 - 도구 호출 메시지 출력
+    logToolCall(name, argument);
+
+    // 승인이 스킵되는 경우 (확실히 실패할 것으로 예상) - 도구 호출 메시지 다음에 출력
+    if (approvalCheck && approvalCheck.skipApproval) {
+        logInfo(`Tool approval skipped: ${approvalCheck.reason}`);
     }
 
     // 도구가 toolMap에 없는 경우 처리
@@ -240,19 +242,14 @@ async function processCodeExecution(name, argument, toolMap) {
     // 승인이 필요한 도구인지 확인 (args 전달하여 실패 여부 판단)
     const approvalCheck = requiresApproval(name, argument);
 
-    // 코드 실행 메시지 먼저 출력
-    logCodeExecution(codeType, codeContent);
-
-    // 승인이 스킵되는 경우 (확실히 실패할 것으로 예상) - 코드 실행 메시지 다음에 출력
-    if (approvalCheck && approvalCheck.skipApproval) {
-        logInfo(`Tool approval skipped: ${approvalCheck.reason}`);
-    }
-
-    // 승인이 필요한 경우
+    // 승인이 필요한 경우 - 승인 요청을 먼저 처리 (History에 표시되기 전)
     if (approvalCheck === true) {
         const approved = await requestApproval(name, argument);
         if (!approved) {
             const exeResult = prepareExecutionResult('', 'User denied code execution', 1);
+            
+            // 거부된 경우에만 코드 실행과 결과를 History에 표시
+            logCodeExecution(codeType, codeContent);
             logCodeResult(exeResult.stdout, exeResult.stderr, exeResult.code);
 
             return {
@@ -260,6 +257,14 @@ async function processCodeExecution(name, argument, toolMap) {
                 content: codeContent
             };
         }
+    }
+
+    // 승인 완료 후 또는 승인 불필요한 경우 - 코드 실행 메시지 출력
+    logCodeExecution(codeType, codeContent);
+
+    // 승인이 스킵되는 경우 (확실히 실패할 것으로 예상) - 코드 실행 메시지 다음에 출력
+    if (approvalCheck && approvalCheck.skipApproval) {
+        logInfo(`Tool approval skipped: ${approvalCheck.reason}`);
     }
 
     // 도구가 toolMap에 없는 경우 처리
