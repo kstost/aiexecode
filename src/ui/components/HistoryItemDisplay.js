@@ -131,7 +131,7 @@ function CodeResultDisplay({ item }) {
     );
 }
 
-function StandardDisplay({ item, isPending, hasFollowingResult }) {
+function StandardDisplay({ item, isPending, hasFollowingResult, nextItem }) {
     const { type, text, operations = [], toolName, toolInput, args } = item;
     const config = getTypeConfig(type);
 
@@ -144,7 +144,8 @@ function StandardDisplay({ item, isPending, hasFollowingResult }) {
         // 파일 경로를 절대 경로로 정규화 (스냅샷은 절대 경로로 저장됨)
         const absolutePath = resolve(effectiveArgs.file_path);
 
-        const originalResult = item.result?.originalResult;
+        // tool_start에는 result가 없으므로 nextItem(tool_result)에서 가져옴
+        const originalResult = item.result?.originalResult || nextItem?.result?.originalResult;
         if (originalResult?.operation_successful === false) {
             diffData = { loaded: true, hasContent: false };
         } else {
@@ -224,9 +225,11 @@ function StandardDisplay({ item, isPending, hasFollowingResult }) {
         debugLog(`old_string length: ${effectiveArgs.old_string?.length || 0}`);
         debugLog(`new_string length: ${effectiveArgs.new_string?.length || 0}`);
 
-        const originalResult = item.result?.originalResult;
+        // tool_start에는 result가 없으므로 nextItem(tool_result)에서 가져옴
+        const originalResult = item.result?.originalResult || nextItem?.result?.originalResult;
         debugLog(`originalResult exists: ${!!originalResult}`);
         debugLog(`operation_successful: ${originalResult?.operation_successful}`);
+        debugLog(`originalResult source: ${item.result?.originalResult ? 'item.result' : nextItem?.result?.originalResult ? 'nextItem.result' : 'none'}`);
 
         if (originalResult?.operation_successful === false) {
             debugLog('Operation was NOT successful, skipping diff display');
@@ -633,7 +636,7 @@ export function HistoryItemDisplay({ item, isPending = false, terminalWidth, nex
     // tool_start 다음에 tool_result가 오는지 확인
     const hasFollowingResult = item.type === 'tool_start' && nextItem && nextItem.type === 'tool_result';
 
-    const result = React.createElement(StandardDisplay, { item, isPending, hasFollowingResult });
+    const result = React.createElement(StandardDisplay, { item, isPending, hasFollowingResult, nextItem });
 
     return result;
 }

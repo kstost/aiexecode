@@ -3,11 +3,18 @@
 
 import { promises as fs } from 'fs';
 import crypto from 'crypto';
+import { dirname, join } from 'path';
 import { createDebugLogger } from '../util/debug_log.js';
+import { DEBUG_LOG_DIR } from '../util/config.js';
 
 function consolelog() { }
 
 const debugLog = createDebugLogger('file_integrity.log', 'file_integrity');
+
+// LOG_FILE을 함수로 만들어 lazy initialization
+function getLogFile() {
+    return join(DEBUG_LOG_DIR, 'file_integrity_internal.log');
+}
 /**
  * 파일 무결성 추적 시스템
  * 각 세션별로 파일 콘텐츠 해시를 추적하고, 편집 전 파일 변경 여부를 검증합니다.
@@ -87,8 +94,9 @@ class FileIntegrityTracker {
         debugLog(`Hash stored in session map`);
         debugLog(`Total files tracked in this session: ${sessionFiles.size}`);
         internalDebugLog.push(`[${timestamp}] Hash stored successfully`);
-        await fs.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => {});
-        await fs.appendFile(LOG_FILE, internalDebugLog.join('\n') + '\n').catch(() => {});
+        const logFile = getLogFile();
+        await fs.mkdir(dirname(logFile), { recursive: true }).catch(() => {});
+        await fs.appendFile(logFile, internalDebugLog.join('\n') + '\n').catch(() => {});
 
         debugLog(`========== trackRead END ==========`);
         consolelog(`[FileIntegrity] Tracked read: ${sessionID}:${filePath} (hash: ${hash.slice(0, 8)}...)`);
@@ -142,16 +150,18 @@ class FileIntegrityTracker {
             assertDebugLog.push(`[${timestamp}] ERROR: No saved hash found`);
             debugLog(`ERROR: No saved hash found for this file in session ${sessionID}`);
             debugLog('========== assertIntegrity ERROR END ==========');
-            await fs.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => {});
-            await fs.appendFile(LOG_FILE, assertDebugLog.join('\n') + '\n').catch(() => {});
+            const logFile = getLogFile();
+            await fs.mkdir(dirname(logFile), { recursive: true }).catch(() => {});
+            await fs.appendFile(logFile, assertDebugLog.join('\n') + '\n').catch(() => {});
 
             throw new Error(
                 `You must read the file ${filePath} before editing it. Use a file reading tool first.`
             );
         }
 
-        await fs.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => {});
-        await fs.appendFile(LOG_FILE, assertDebugLog.join('\n') + '\n').catch(() => {});
+        const logFile = getLogFile();
+        await fs.mkdir(dirname(logFile), { recursive: true }).catch(() => {});
+        await fs.appendFile(logFile, assertDebugLog.join('\n') + '\n').catch(() => {});
 
         debugLog(`Reading current file content for comparison...`);
         debugLog(`  - Reading from path: ${filePath}`);

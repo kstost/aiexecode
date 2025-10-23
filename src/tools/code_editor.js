@@ -1,10 +1,16 @@
 import { promises as fs } from 'fs';
-import { dirname, resolve } from 'path';
+import { dirname, resolve, join } from 'path';
 import * as diff from 'diff';
 import { assertFileIntegrity, trackFileRead, saveFileSnapshot } from '../system/file_integrity.js';
 import { createDebugLogger } from '../util/debug_log.js';
+import { DEBUG_LOG_DIR } from '../util/config.js';
 
 const debugLog = createDebugLogger('code_editor.log', 'code_editor');
+
+// LOG_FILE을 함수로 만들어 lazy initialization
+function getLogFile() {
+    return join(DEBUG_LOG_DIR, 'code_editor_internal.log');
+}
 
 // 이 파일은 파일을 만들고 수정할 때 필요한 기본 동작들을 제공합니다.
 // Orchestrator가 제안한 변경 사항을 실제 파일 시스템에 반영할 때 이 도구들을 호출합니다.
@@ -97,8 +103,9 @@ export async function write_file({ file_path, content }) {
             } catch (integrityError) {
                 internalDebugLog.push(`[${timestamp}] assertFileIntegrity FAILED: ${integrityError.message}`);
                 debugLog(`ERROR: assertFileIntegrity FAILED: ${integrityError.message}`);
-                await fs.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => {});
-                await fs.appendFile(LOG_FILE, internalDebugLog.join('\n') + '\n');
+                const logFile = getLogFile();
+                await fs.mkdir(dirname(logFile), { recursive: true }).catch(() => {});
+                await fs.appendFile(logFile, internalDebugLog.join('\n') + '\n');
                 throw integrityError;
             }
         }
@@ -121,8 +128,9 @@ export async function write_file({ file_path, content }) {
         saveFileSnapshot(absolutePath, content);
         debugLog(`Snapshot saved`);
 
-        await fs.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => {});
-        await fs.appendFile(LOG_FILE, internalDebugLog.join('\n') + '\n');
+        const logFile = getLogFile();
+        await fs.mkdir(dirname(logFile), { recursive: true }).catch(() => {});
+        await fs.appendFile(logFile, internalDebugLog.join('\n') + '\n');
 
         // diff 생성 (기존 파일이 있었을 경우에만, 절대경로 사용)
         let diffInfo = null;
@@ -166,8 +174,9 @@ export async function write_file({ file_path, content }) {
         debugLog(`Exception caught: ${error.message}`);
         debugLog(`Stack trace: ${error.stack}`);
         debugLog('========== write_file EXCEPTION END ==========');
-        await fs.mkdir(dirname(LOG_FILE), { recursive: true }).catch(() => {});
-        await fs.appendFile(LOG_FILE, internalDebugLog.join('\n') + '\n').catch(() => {});
+        const logFile = getLogFile();
+        await fs.mkdir(dirname(logFile), { recursive: true }).catch(() => {});
+        await fs.appendFile(logFile, internalDebugLog.join('\n') + '\n').catch(() => {});
 
         // 에러 시에도 절대경로로 반환
         const absolutePath = resolve(file_path);
