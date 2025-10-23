@@ -149,6 +149,14 @@ async function processToolCall(name, argument, toolMap, sessionID) {
     // 승인이 필요한 도구인지 확인 (args 전달하여 실패 여부 판단)
     const approvalCheck = requiresApproval(name, argument);
 
+    // 도구 호출 메시지 먼저 출력
+    logToolCall(name, argument);
+
+    // 승인이 스킵되는 경우 (확실히 실패할 것으로 예상) - 도구 호출 메시지 다음에 출력
+    if (approvalCheck && approvalCheck.skipApproval) {
+        logInfo(`Tool approval skipped: ${approvalCheck.reason}`);
+    }
+
     // 승인이 필요한 경우
     if (approvalCheck === true) {
         const approved = await requestApproval(name, argument);
@@ -160,7 +168,6 @@ async function processToolCall(name, argument, toolMap, sessionID) {
             const stdout = formatToolStdout(name, errorResult);
             const exeResult = prepareExecutionResult(stdout, '', 1);
 
-            logToolCall(name, argument);
             logToolResult(name, exeResult.stdout, errorResult, argument);
 
             return {
@@ -169,13 +176,6 @@ async function processToolCall(name, argument, toolMap, sessionID) {
                 content: `${name}(${JSON.stringify(argument, null, 2)})`
             };
         }
-    }
-
-    logToolCall(name, argument);
-
-    // 승인이 스킵되는 경우 (확실히 실패할 것으로 예상) - 도구 호출 메시지 다음에 출력
-    if (approvalCheck && approvalCheck.skipApproval) {
-        logInfo(`Tool approval skipped: ${approvalCheck.reason}`);
     }
 
     // 도구가 toolMap에 없는 경우 처리
@@ -240,12 +240,18 @@ async function processCodeExecution(name, argument, toolMap) {
     // 승인이 필요한 도구인지 확인 (args 전달하여 실패 여부 판단)
     const approvalCheck = requiresApproval(name, argument);
 
+    // 코드 실행 메시지 먼저 출력
+    logCodeExecution(codeType, codeContent);
+
+    // 승인이 스킵되는 경우 (확실히 실패할 것으로 예상) - 코드 실행 메시지 다음에 출력
+    if (approvalCheck && approvalCheck.skipApproval) {
+        logInfo(`Tool approval skipped: ${approvalCheck.reason}`);
+    }
+
     // 승인이 필요한 경우
     if (approvalCheck === true) {
         const approved = await requestApproval(name, argument);
         if (!approved) {
-            logCodeExecution(codeType, codeContent);
-
             const exeResult = prepareExecutionResult('', 'User denied code execution', 1);
             logCodeResult(exeResult.stdout, exeResult.stderr, exeResult.code);
 
@@ -254,13 +260,6 @@ async function processCodeExecution(name, argument, toolMap) {
                 content: codeContent
             };
         }
-    }
-
-    logCodeExecution(codeType, codeContent);
-
-    // 승인이 스킵되는 경우 (확실히 실패할 것으로 예상) - 코드 실행 메시지 다음에 출력
-    if (approvalCheck && approvalCheck.skipApproval) {
-        logInfo(`Tool approval skipped: ${approvalCheck.reason}`);
     }
 
     // 도구가 toolMap에 없는 경우 처리

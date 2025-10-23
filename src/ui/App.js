@@ -258,6 +258,7 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
                 // 쌍이 필요 없는 단일 이벤트 타입들 (즉시 static으로)
                 const singleEventTypes = [
                     'user', 'assistant', 'system', 'error',
+                    'tool_start', 'code_execution',  // 도구/코드 실행 메시지도 즉시 표시
                     'iteration_start', 'verification_start', 'verification_result',
                     'mission_failed', 'rag_search', 'conversation_restored'
                 ];
