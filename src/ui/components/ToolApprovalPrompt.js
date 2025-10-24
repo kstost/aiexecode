@@ -420,11 +420,11 @@ function renderToolArgs(toolName, args, mcpToolInfo = null) {
                     // 라인 번호 계산
                     const beforeMatch = content.substring(0, index);
                     const startLine = beforeMatch.split('\n').length;
-                    
+
                     // Calculate actual line count (handle trailing newline)
                     const oldStringSplit = oldString.split('\n');
-                    const oldStringLines = oldString.endsWith('\n') 
-                        ? oldStringSplit.length - 1 
+                    const oldStringLines = oldString.endsWith('\n')
+                        ? oldStringSplit.length - 1
                         : oldStringSplit.length;
                     const endLine = startLine + oldStringLines - 1;
 
@@ -433,10 +433,23 @@ function renderToolArgs(toolName, args, mcpToolInfo = null) {
                     const actualLines = content === '' ? [] :
                         (content.endsWith('\n') ? lines.slice(0, -1) : lines);
 
-                    // Use old_string and new_string directly for accurate diff
-                    // Normalize trailing newlines to ensure consistent line counting
-                    const fullOldContent = oldString.replace(/\n$/, '');
-                    const fullNewContent = newString.replace(/\n$/, '');
+                    // For partial line replacements, show the full line context
+                    // For multi-line replacements, use the matched content directly
+                    let fullOldContent, fullNewContent;
+
+                    if (oldStringLines === 1 && !oldString.includes('\n')) {
+                        // Single line partial replacement - extract and show full lines
+                        const affectedLines = actualLines.slice(startLine - 1, endLine);
+                        fullOldContent = affectedLines.join('\n');
+                        // Replace old_string with new_string in each affected line
+                        fullNewContent = affectedLines.map(line =>
+                            line.replace(oldString, newString)
+                        ).join('\n');
+                    } else {
+                        // Multi-line replacement - use the matched content directly
+                        fullOldContent = oldString.replace(/\n$/, '');
+                        fullNewContent = newString.replace(/\n$/, '');
+                    }
 
                     // Extract context (2 lines before and after)
                     const contextLines = 2;
@@ -471,7 +484,7 @@ function renderToolArgs(toolName, args, mcpToolInfo = null) {
                 React.createElement(Text, { color: 'white' }, toDisplayPath(args.file_path))
             ),
             args.replace_all && React.createElement(Box, { marginBottom: 0 },
-                React.createElement(Text, { color: 'yellow' }, '⚠ replace_all: true (will replace ALL occurrences)')
+                React.createElement(Text, { color: 'yellow' }, 'replace_all: true (will replace ALL occurrences)')
             ),
             diffData ? (
                 diffData.error ?

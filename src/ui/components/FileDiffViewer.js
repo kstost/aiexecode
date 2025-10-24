@@ -152,24 +152,41 @@ function normalizeTabs(text, tabWidth = 4) {
  * Normalizes tabs to spaces for consistent terminal display
  */
 function parseContentLines(oldContent, newContent, tabWidth = 4) {
+    debugLog('[parseContentLines] START');
+    debugLog(`[parseContentLines] oldContent type: ${typeof oldContent}, length: ${oldContent?.length}`);
+    debugLog(`[parseContentLines] oldContent raw: ${JSON.stringify(oldContent)}`);
+    debugLog(`[parseContentLines] newContent type: ${typeof newContent}, length: ${newContent?.length}`);
+    debugLog(`[parseContentLines] newContent raw: ${JSON.stringify(newContent)}`);
+
     // Handle null, undefined, and empty string
     let beforeLines = [];
     let afterLines = [];
-    
+
     if (oldContent !== null && oldContent !== undefined) {
         // Normalize tabs before splitting to ensure consistent display
         const normalized = normalizeTabs(oldContent, tabWidth);
+        debugLog(`[parseContentLines] oldContent normalized: ${JSON.stringify(normalized)}`);
         // Empty string should become empty array, not ['']
         beforeLines = normalized === '' ? [] : normalized.split('\n');
+        debugLog(`[parseContentLines] beforeLines count: ${beforeLines.length}`);
+        beforeLines.forEach((line, idx) => {
+            debugLog(`[parseContentLines] beforeLines[${idx}]: ${JSON.stringify(line)}`);
+        });
     }
-    
+
     if (newContent !== null && newContent !== undefined) {
         // Normalize tabs before splitting to ensure consistent display
         const normalized = normalizeTabs(newContent, tabWidth);
+        debugLog(`[parseContentLines] newContent normalized: ${JSON.stringify(normalized)}`);
         // Empty string should become empty array, not ['']
         afterLines = normalized === '' ? [] : normalized.split('\n');
+        debugLog(`[parseContentLines] afterLines count: ${afterLines.length}`);
+        afterLines.forEach((line, idx) => {
+            debugLog(`[parseContentLines] afterLines[${idx}]: ${JSON.stringify(line)}`);
+        });
     }
 
+    debugLog('[parseContentLines] END');
     return {
         beforeLines,
         afterLines
@@ -181,43 +198,57 @@ function parseContentLines(oldContent, newContent, tabWidth = 4) {
  * For single-line changes, uses word-level diff for better visualization
  */
 function calculateDiff(beforeLines, afterLines) {
+    debugLog('[calculateDiff] START');
+    debugLog(`[calculateDiff] beforeLines.length: ${beforeLines.length}`);
+    debugLog(`[calculateDiff] afterLines.length: ${afterLines.length}`);
+
     // Handle edge case: both empty
     if (beforeLines.length === 0 && afterLines.length === 0) {
+        debugLog('[calculateDiff] Both empty - returning empty array');
         return [];
     }
 
     // Handle edge case: only before is empty (all additions)
     if (beforeLines.length === 0) {
-        return afterLines.map(line => ({ 
-            type: 'added', 
-            newLine: line, 
-            isWordDiff: false 
+        debugLog('[calculateDiff] Before empty - all additions');
+        return afterLines.map(line => ({
+            type: 'added',
+            newLine: line,
+            isWordDiff: false
         }));
     }
 
     // Handle edge case: only after is empty (all deletions)
     if (afterLines.length === 0) {
-        return beforeLines.map(line => ({ 
-            type: 'removed', 
-            oldLine: line, 
-            isWordDiff: false 
+        debugLog('[calculateDiff] After empty - all deletions');
+        return beforeLines.map(line => ({
+            type: 'removed',
+            oldLine: line,
+            isWordDiff: false
         }));
     }
 
     const beforeText = beforeLines.join('\n');
     const afterText = afterLines.join('\n');
+    debugLog(`[calculateDiff] beforeText: ${JSON.stringify(beforeText)}`);
+    debugLog(`[calculateDiff] afterText: ${JSON.stringify(afterText)}`);
 
     // Special case: if both are single lines with no newlines and relatively short, use word-level diff
     // This provides better visualization for small inline changes
-    const isSingleLineDiff = beforeLines.length === 1 && afterLines.length === 1 && 
+    const isSingleLineDiff = beforeLines.length === 1 && afterLines.length === 1 &&
                              !beforeText.includes('\n') && !afterText.includes('\n') &&
                              beforeText.length < 200 && afterText.length < 200;
+    debugLog(`[calculateDiff] isSingleLineDiff: ${isSingleLineDiff}`);
 
     if (isSingleLineDiff) {
+        debugLog('[calculateDiff] Using word-level diff');
         const wordDiff = diffWords(beforeText, afterText);
+        debugLog(`[calculateDiff] wordDiff changes count: ${wordDiff.length}`);
         const result = [];
 
-        for (const change of wordDiff) {
+        for (let i = 0; i < wordDiff.length; i++) {
+            const change = wordDiff[i];
+            debugLog(`[calculateDiff] wordDiff[${i}]: added=${change.added}, removed=${change.removed}, value=${JSON.stringify(change.value)}`);
             if (change.added) {
                 result.push({ type: 'added', newLine: change.value, isWordDiff: true });
             } else if (change.removed) {
@@ -227,28 +258,40 @@ function calculateDiff(beforeLines, afterLines) {
             }
         }
 
+        debugLog(`[calculateDiff] Word-level diff result items: ${result.length}`);
         return result;
     }
 
     // Standard line-based diff for multi-line content
+    debugLog('[calculateDiff] Using line-based diff');
     const changes = diffLines(beforeText, afterText);
+    debugLog(`[calculateDiff] diffLines changes count: ${changes.length}`);
     const result = [];
 
-    for (const change of changes) {
+    for (let changeIdx = 0; changeIdx < changes.length; changeIdx++) {
+        const change = changes[changeIdx];
+        debugLog(`[calculateDiff] change[${changeIdx}]: added=${change.added}, removed=${change.removed}, count=${change.count}, value.length=${change.value.length}`);
+        debugLog(`[calculateDiff] change[${changeIdx}] value: ${JSON.stringify(change.value)}`);
+
         const lines = change.value.split('\n');
-        
+        debugLog(`[calculateDiff] change[${changeIdx}] split into ${lines.length} lines`);
+
         // Remove trailing empty line only if it's the result of split on text ending with \n
         // This happens because "line1\nline2\n".split('\n') gives ["line1", "line2", ""]
         if (lines.length > 0 && lines[lines.length - 1] === '' && change.value.endsWith('\n')) {
+            debugLog(`[calculateDiff] change[${changeIdx}] removing trailing empty line`);
             lines.pop();
         }
 
         // Handle empty changes (shouldn't happen, but defensive programming)
         if (lines.length === 0) {
+            debugLog(`[calculateDiff] change[${changeIdx}] has no lines after processing - skipping`);
             continue;
         }
 
-        for (const line of lines) {
+        for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+            const line = lines[lineIdx];
+            debugLog(`[calculateDiff] change[${changeIdx}] line[${lineIdx}]: ${JSON.stringify(line)}`);
             if (change.added) {
                 result.push({ type: 'added', newLine: line, isWordDiff: false });
             } else if (change.removed) {
@@ -259,6 +302,11 @@ function calculateDiff(beforeLines, afterLines) {
         }
     }
 
+    debugLog(`[calculateDiff] Line-based diff result items: ${result.length}`);
+    result.forEach((item, idx) => {
+        debugLog(`[calculateDiff] result[${idx}]: type=${item.type}, oldLine=${JSON.stringify(item.oldLine)}, newLine=${JSON.stringify(item.newLine)}`);
+    });
+    debugLog('[calculateDiff] END');
     return result;
 }
 
@@ -266,6 +314,11 @@ function calculateDiff(beforeLines, afterLines) {
  * Render a line with inline word-level diff highlighting
  */
 function InlineDiffLine({ lineNum, parts, prefix, lineType }) {
+    debugLog(`[InlineDiffLine] lineNum=${lineNum}, prefix="${prefix}", lineType=${lineType}, parts.length=${parts.length}`);
+    parts.forEach((part, idx) => {
+        debugLog(`[InlineDiffLine] parts[${idx}]: type=${part.type}, text=${JSON.stringify(part.text)}`);
+    });
+
     const lineNumStr = lineNum !== null ? `${String(lineNum).padStart(4, ' ')} ` : '     ';
 
     // Background color based on line type
@@ -274,6 +327,7 @@ function InlineDiffLine({ lineNum, parts, prefix, lineType }) {
 
     // Filter out parts with null or undefined text, but keep empty strings (they're valid)
     const validParts = parts.filter(part => part.text !== null && part.text !== undefined);
+    debugLog(`[InlineDiffLine] validParts.length=${validParts.length}`);
 
     return React.createElement(Box, { backgroundColor: bgColor },
         React.createElement(Text, { color: lineNumColor }, lineNumStr),
@@ -310,31 +364,36 @@ function InlineDiffLine({ lineNum, parts, prefix, lineType }) {
  * Render a single line in unified diff view
  */
 function UnifiedDiffLine({ oldLineNum, newLineNum, content, type, language }) {
+    debugLog(`[UnifiedDiffLine] type=${type}, oldLineNum=${oldLineNum}, newLineNum=${newLineNum}, content=${JSON.stringify(content)}`);
+
     // In unified diff format, we show both old and new line numbers
     // Format: "old new" or just one if the other is null
     let lineNumStr;
 
     if (type === 'removed') {
         // Removed lines: show old line number only
-        lineNumStr = oldLineNum !== null && oldLineNum !== undefined 
-            ? `${String(oldLineNum).padStart(4, ' ')} ` 
+        lineNumStr = oldLineNum !== null && oldLineNum !== undefined
+            ? `${String(oldLineNum).padStart(4, ' ')} `
             : '     ';
     } else if (type === 'added') {
         // Added lines: show new line number only
-        lineNumStr = newLineNum !== null && newLineNum !== undefined 
-            ? `${String(newLineNum).padStart(4, ' ')} ` 
+        lineNumStr = newLineNum !== null && newLineNum !== undefined
+            ? `${String(newLineNum).padStart(4, ' ')} `
             : '     ';
     } else {
         // Unchanged lines: show new line number (the line number in the result file)
-        lineNumStr = newLineNum !== null && newLineNum !== undefined 
-            ? `${String(newLineNum).padStart(4, ' ')} ` 
+        lineNumStr = newLineNum !== null && newLineNum !== undefined
+            ? `${String(newLineNum).padStart(4, ' ')} `
             : '     ';
     }
+
+    debugLog(`[UnifiedDiffLine] lineNumStr="${lineNumStr}"`);
 
     // Get prefix and content based on type
     // Handle null/undefined content gracefully
     const contentStr = (content !== null && content !== undefined) ? content : '';
     const prefix = type === 'removed' ? '-' : (type === 'added' ? '+' : ' ');
+    debugLog(`[UnifiedDiffLine] prefix="${prefix}", contentStr="${contentStr}"`);
 
     // Determine colors based on line type
     // Keep line number and content separate to allow different colors
@@ -402,6 +461,11 @@ export function FileDiffViewer({ filePath, startLine, endLine, oldContent, newCo
         const diffAddedCount = diff.filter(d => d.type === 'added').length;
         const diffUnchangedCount = diff.filter(d => d.type === 'unchanged').length;
         debugLog(`Diff breakdown: removed=${diffRemovedCount}, added=${diffAddedCount}, unchanged=${diffUnchangedCount}`);
+
+        // Log all diff items for detailed inspection
+        diff.forEach((item, idx) => {
+            debugLog(`[FileDiffViewer] diff[${idx}]: type=${item.type}, oldLine=${JSON.stringify(item.oldLine)}, newLine=${JSON.stringify(item.newLine)}, isWordDiff=${item.isWordDiff}`);
+        });
 
         // Handle empty diff (no changes)
         if (diff.length === 0) {
@@ -542,25 +606,20 @@ export function FileDiffViewer({ filePath, startLine, endLine, oldContent, newCo
                                 );
                                 newLineNum++;
                             } else if (item.type === 'unchanged') {
-                                // In replace mode, skip unchanged lines to avoid line number shifts
-                                if (!isReplaceMode) {
-                                    debugLog(`[DIFF #${i}] UNCHANGED line at old=${oldLineNum}, new=${newLineNum} (rendering)`);
-                                    // Unchanged lines in the edited range
-                                    rows.push(
-                                        React.createElement(UnifiedDiffLine, {
-                                            key: `diff-unchanged-${oldLineNum}-${i}`,
-                                            oldLineNum: oldLineNum,
-                                            newLineNum: newLineNum,
-                                            content: item.oldLine,
-                                            type: 'unchanged',
-                                            language
-                                        })
-                                    );
-                                    oldLineNum++;
-                                    newLineNum++;
-                                } else {
-                                    debugLog(`[DIFF #${i}] UNCHANGED line SKIPPED (isReplaceMode=true)`);
-                                }
+                                debugLog(`[DIFF #${i}] UNCHANGED line at old=${oldLineNum}, new=${newLineNum} (rendering)`);
+                                // Unchanged lines in the edited range - always render them
+                                rows.push(
+                                    React.createElement(UnifiedDiffLine, {
+                                        key: `diff-unchanged-${oldLineNum}-${i}`,
+                                        oldLineNum: oldLineNum,
+                                        newLineNum: newLineNum,
+                                        content: item.oldLine,
+                                        type: 'unchanged',
+                                        language
+                                    })
+                                );
+                                oldLineNum++;
+                                newLineNum++;
                             }
                         }
                         debugLog(`[DIFF RENDERING] Final oldLineNum=${oldLineNum}, newLineNum=${newLineNum}`);
