@@ -26,7 +26,7 @@ export function Header({ version = '1.0.0' }) {
     ▘ ▘▀▘▀▀▘▘ ▘▀▀▘▝▀ ▝▀ ▝▀▘▝▀▘
     by 코드깎는노인
     `.split('\n').map(line => line.trim()).join("\n");
-    return React.createElement(Box, { flexDirection: "column", marginBottom: 1 },
+    return React.createElement(Box, { flexDirection: "column", marginBottom: 1, marginLeft: 2 },
         theme.ui.gradient
             ? React.createElement(Gradient, { colors: theme.ui.gradient },
                 React.createElement(Text, null, ASCII_LOGO))

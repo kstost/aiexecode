@@ -4,6 +4,7 @@ import * as diff from 'diff';
 import { assertFileIntegrity, trackFileRead, saveFileSnapshot } from '../system/file_integrity.js';
 import { createDebugLogger } from '../util/debug_log.js';
 import { DEBUG_LOG_DIR } from '../util/config.js';
+import { toDisplayPath } from '../util/path_helper.js';
 
 const debugLog = createDebugLogger('code_editor.log', 'code_editor');
 
@@ -224,7 +225,7 @@ export const writeFileSchema = {
         "show_tool_result": true,
         "display_name": "Write",
         "format_tool_call": (args) => {
-            return `(${args.file_path || ''})`;
+            return `(${toDisplayPath(args.file_path)})`;
         },
         "format_tool_result": (result) => {
             if (result.operation_successful) {
@@ -724,7 +725,7 @@ export const editFileReplaceSchema = {
         "show_tool_result": true,
         "display_name": "Replace",
         "format_tool_call": (args) => {
-            return `(${args.file_path || ''})${args.replace_all ? ' [all]' : ''}`;
+            return `(${toDisplayPath(args.file_path)})${args.replace_all ? ' [all]' : ''}`;
         },
         "format_tool_result": (result) => {
             if (result.operation_successful) {
@@ -771,7 +772,7 @@ export const editFileRangeSchema = {
         "show_tool_result": true,
         "display_name": "Edit",
         "format_tool_call": (args) => {
-            return `(${args.file_path || ''}, lines ${args.start_line}-${args.end_line})`;
+            return `(${toDisplayPath(args.file_path)}, lines ${args.start_line}-${args.end_line})`;
         },
         "format_tool_result": (result) => {
             if (result.operation_successful) {

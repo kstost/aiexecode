@@ -18,7 +18,7 @@ export function Footer({ model = 'gpt-4', reasoningEffort = null, cwd = process.
         displayModel = `${model} (${reasoningEffort})`;
     }
 
-    return React.createElement(Box, { justifyContent: "space-between", paddingX: 1, marginTop: 1 },
+    return React.createElement(Box, { justifyContent: "space-between", paddingX: 1, marginTop: 0 },
         React.createElement(Box, null,
             React.createElement(Text, { color: theme.text.link }, `CWD:${displayCwd}`)),
         React.createElement(Box, null,

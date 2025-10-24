@@ -10,6 +10,7 @@ import { common, createLowlight } from 'lowlight';
 import { getToolDisplayName } from '../../system/tool_registry.js';
 import { getFileSnapshot } from '../../system/file_integrity.js';
 import { resolve } from 'path';
+import { toDisplayPath } from '../../util/path_helper.js';
 
 const lowlight = createLowlight(common);
 
@@ -291,7 +292,7 @@ function renderToolArgs(toolName, args, mcpToolInfo = null) {
         return React.createElement(Box, { flexDirection: 'column', marginTop: 0 },
             React.createElement(Box, {},
                 React.createElement(Text, { bold: true, color: 'cyan' }, 'File '),
-                React.createElement(Text, { color: 'white' }, args.file_path || '')
+                React.createElement(Text, { color: 'white' }, toDisplayPath(args.file_path))
             ),
             React.createElement(Box, {
                 borderStyle: 'single',
@@ -371,7 +372,7 @@ function renderToolArgs(toolName, args, mcpToolInfo = null) {
         return React.createElement(Box, { flexDirection: 'column', marginTop: 0 },
             React.createElement(Box, { marginBottom: 0 },
                 React.createElement(Text, { bold: true, color: 'cyan' }, 'File '),
-                React.createElement(Text, { color: 'white' }, args.file_path || '')
+                React.createElement(Text, { color: 'white' }, toDisplayPath(args.file_path))
             ),
             oldContent !== null ? React.createElement(FileDiffViewer, {
                 filePath: args.file_path,
@@ -467,7 +468,7 @@ function renderToolArgs(toolName, args, mcpToolInfo = null) {
         return React.createElement(Box, { flexDirection: 'column', marginTop: 0 },
             React.createElement(Box, { marginBottom: 0 },
                 React.createElement(Text, { bold: true, color: 'cyan' }, 'File '),
-                React.createElement(Text, { color: 'white' }, args.file_path || '')
+                React.createElement(Text, { color: 'white' }, toDisplayPath(args.file_path))
             ),
             args.replace_all && React.createElement(Box, { marginBottom: 0 },
                 React.createElement(Text, { color: 'yellow' }, '⚠ replace_all: true (will replace ALL occurrences)')

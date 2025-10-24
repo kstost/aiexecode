@@ -2,6 +2,7 @@ import { promises as fs } from 'fs';
 import { resolve } from 'path';
 import { trackFileRead, saveFileSnapshot } from '../system/file_integrity.js';
 import { createDebugLogger } from '../util/debug_log.js';
+import { toDisplayPath } from '../util/path_helper.js';
 
 const debugLog = createDebugLogger('file_reader.log', 'file_reader');
 
@@ -122,7 +123,7 @@ export const readFileSchema = {
         "show_tool_result": true,
         "display_name": "Read",
         "format_tool_call": (args) => {
-            return `(${args.filePath || ''})`;
+            return `(${toDisplayPath(args.filePath)})`;
         },
         "format_tool_result": (result) => {
             if (result.operation_successful) {
@@ -282,7 +283,7 @@ export const readFileRangeSchema = {
         "show_tool_result": true,
         "display_name": "Read",
         "format_tool_call": (args) => {
-            return `(${args.filePath || ''}, lines ${args.startLine}-${args.endLine})`;
+            return `(${toDisplayPath(args.filePath)}, lines ${args.startLine}-${args.endLine})`;
         },
         "format_tool_result": (result) => {
             if (result.operation_successful) {

@@ -17,7 +17,7 @@ export function DefaultAppLayout({ onSubmit, onClearScreen, commands, buffer }) 
 
     return React.createElement(Box, {
         flexDirection: "column",
-        padding: 1,
+        padding: 0,
         ref: uiState.rootUiRef
     },
         React.createElement(MainContent),

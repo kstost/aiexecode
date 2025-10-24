@@ -7,6 +7,7 @@ import { Box, Text } from 'ink';
 import { common, createLowlight } from 'lowlight';
 import { diffLines, diffWords } from 'diff';
 import { createDebugLogger } from '../../util/debug_log.js';
+import { toDisplayPath } from '../../util/path_helper.js';
 
 const lowlight = createLowlight(common);
 
@@ -359,7 +360,7 @@ function UnifiedDiffLine({ oldLineNum, newLineNum, content, type, language }) {
 /**
  * Main FileDiffViewer component - Unified diff format
  */
-export function FileDiffViewer({ filePath, startLine, endLine, oldContent, newContent, contextBefore = [], contextAfter = [], contextStartLine = null, isReplaceMode = false }) {
+export function FileDiffViewer({ filePath, startLine, endLine, oldContent, newContent, contextBefore = [], contextAfter = [], contextStartLine = null, isReplaceMode = false, showHeader = true }) {
     debugLog('========== FileDiffViewer RENDER START ==========');
     debugLog(`filePath: ${filePath}`);
     debugLog(`startLine: ${startLine}, endLine: ${endLine}`);
@@ -406,7 +407,7 @@ export function FileDiffViewer({ filePath, startLine, endLine, oldContent, newCo
         if (diff.length === 0) {
             debugLog(`No diff detected - both contents are identical or empty`);
             return React.createElement(Box, { flexDirection: 'column' },
-                React.createElement(Text, { color: 'yellow' }, `No changes detected in ${filePath}`)
+                React.createElement(Text, { color: 'yellow' }, `No changes detected in ${toDisplayPath(filePath)}`)
             );
         }
 
@@ -441,9 +442,9 @@ export function FileDiffViewer({ filePath, startLine, endLine, oldContent, newCo
 
         const element = React.createElement(Box, { flexDirection: 'column', marginBottom: 0, width: '100%' },
             React.createElement(Box, { flexDirection: 'column', borderStyle: 'single', borderColor: '#3a3a3a', width: '100%' },
-                // Header
-                React.createElement(Box, { marginBottom: 1 },
-                    React.createElement(Text, { bold: true, color: 'cyan' }, ` ${filePath} `),
+                // Header (optional)
+                showHeader && React.createElement(Box, { marginBottom: 1 },
+                    React.createElement(Text, { bold: true, color: 'cyan' }, ` ${toDisplayPath(filePath)} `),
                     React.createElement(Text, { color: '#545454' }, rangeInfo)
                 ),
 
