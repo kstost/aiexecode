@@ -733,7 +733,7 @@ export async function runSession(options) {
         if (!sessionInterrupted) {
             sessionInterrupted = true;
             abortCurrentRequest(); // API 요청 즉시 중단
-            uiEvents.addSystemMessage('⚠ Session interrupted by user (ESC)');
+            uiEvents.addErrorMessage('Session interrupted by user');
         }
     };
     uiEvents.on('session:interrupt', handleInterrupt);

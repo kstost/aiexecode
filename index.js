@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // 이 파일은 계획·실행·검증으로 이어지는 전체 에이전트 사이클을 조립하여 단일 작업 흐름으로 실행합니다.
-import { dirname } from 'path';
+import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { initializeMCPIntegration } from "./src/system/mcp_integration.js";
 import { ensureConfigDirectory, loadSettings, SETTINGS_FILE, PAYLOAD_LOG_DIR, DEBUG_LOG_DIR } from "./src/util/config.js";
@@ -160,6 +160,13 @@ if (viewerMode) {
 process.app_custom = {};
 process.app_custom.__dirname = dirname(fileURLToPath(import.meta.url));
 
+// 개발 모드 감지: 현재 디렉토리에서 node index.js로 실행했는지 확인
+// (글로벌 설치 후 aiexecode 명령으로 실행 시에는 다른 경로에서 실행됨)
+const packageJsonPath = join(process.app_custom.__dirname, 'package.json');
+const isDevelopment = fs.existsSync(packageJsonPath) &&
+                      process.app_custom.__dirname === dirname(fileURLToPath(import.meta.url));
+process.env.IS_DEVELOPMENT = isDevelopment ? 'true' : 'false';
+
 // Session ID 생성 함수 (16자리 hex)
 function generateSessionID() {
     const chars = '0123456789abcdef';
@@ -224,8 +231,10 @@ if (dependencyCheck.warnings && dependencyCheck.warnings.length > 0) {
 }
 
 // 임시 폴더 정리
-fs.rmSync(PAYLOAD_LOG_DIR, { recursive: true, force: true }); // 홈 디렉토리의 .aiexe/payload_log
-fs.rmSync(DEBUG_LOG_DIR, { recursive: true, force: true }); // cwd의 .aiexe/debuglog
+fs.rmSync(PAYLOAD_LOG_DIR, { recursive: true, force: true }); // 홈 디렉토리의 .aiexe/payload_log (모든 모드)
+if (process.env.IS_DEVELOPMENT === 'true') {
+    fs.rmSync(DEBUG_LOG_DIR, { recursive: true, force: true }); // cwd의 .aiexe/debuglog (개발 모드만)
+}
 
 // 설정 로드
 await ensureConfigDirectory();

@@ -1,11 +1,10 @@
 /**
  * Debug Configuration
  * 디버깅 관련 설정을 관리합니다.
+ *
+ * 디버그 로그는 실행 모드에 따라 자동으로 활성화됩니다:
+ * - 개발 모드 (node index.js): 로그 기록
+ * - 프로덕션 모드 (aiexecode 명령): 로그 비활성화
+ *
+ * process.env.IS_DEVELOPMENT로 자동 감지됩니다. (index.js에서 설정)
  */
-
-/**
- * 디버그 로그 활성화 여부
- * true: debug.txt 파일에 상세 로그 기록
- * false: 디버그 로그 비활성화 (프로덕션)
- */
-export const ENABLE_DEBUG_LOG = true;
