@@ -173,7 +173,7 @@ export async function globSearch({
         // stat 정보를 이용한 정렬은 추가 fs.stat 호출이 필요하므로
         // 기본적으로는 알파벳 순으로 정렬
         debugLog(`Sorting results...`);
-        results.sort((a, b) => a.file_path.localeCompare(b.file_path));
+        results.sort((a, b) => a.localeCompare(b));
         debugLog(`Results sorted alphabetically`);
 
         debugLog('========== globSearch SUCCESS END ==========');
