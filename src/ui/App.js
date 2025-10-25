@@ -955,8 +955,7 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
 
             // Pending items (currently being processed) with blank lines
             pendingHistory.length > 0 && React.createElement(Box, {
-                flexDirection: "column",
-                marginTop: 1  // Add spacing between static and pending items
+                flexDirection: "column"
             },
                 ...(() => {
                     debugLog(`[Pending Render] Creating ${pendingHistory.length} pending items with blank lines`);

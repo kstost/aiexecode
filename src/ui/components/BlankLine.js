@@ -54,6 +54,7 @@ export function BlankLine({ reason, afterType, afterToolName, beforeType }) {
     }, []);
 
     // 빈 줄은 공백 문자를 포함한 Text로 렌더링
-    // Ink에서 빈 문자열은 렌더링되지 않으므로 공백 필요
+    // Ink의 flexDirection: 'column'에서 각 컴포넌트는 한 줄씩 차지하므로
+    // Text(' ')는 한 줄의 빈 줄로 렌더링됨
     return React.createElement(Text, null, ' ');
 }
