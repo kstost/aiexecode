@@ -71,17 +71,64 @@ export async function globSearch({
             cwd: resolvedCwd,
             dot: includeHidden,                    // 숨김 파일 포함
             ignore: [                              // 기본 제외 패턴
-                '**/node_modules/**',
-                '**/.git/**',
-                '**/venv/**',
-                '**/.next/**',
+                // 의존성 디렉토리
+                '**/node_modules/**',              // JavaScript/TypeScript
+                '**/vendor/**',                    // PHP, Go
+                '**/Pods/**',                      // iOS CocoaPods
+                '**/.bundle/**',                   // Ruby
+                '**/bower_components/**',          // Bower
+                '**/jspm_packages/**',             // JSPM
+
+                // 빌드 출력 디렉토리
                 '**/dist/**',
                 '**/build/**',
-                '**/.venv/**',
-                '**/__pycache__/**',
-                '**/.pytest_cache/**',
-                '**/coverage/**',
-                '**/.nyc_output/**'
+                '**/out/**',
+                '**/output/**',
+                '**/target/**',                    // Rust, Java/Maven
+                '**/bin/**',                       // C#, Go
+                '**/obj/**',                       // C#
+                '**/.next/**',                     // Next.js
+                '**/.nuxt/**',                     // Nuxt.js
+                '**/.svelte-kit/**',               // SvelteKit
+                '**/public/build/**',
+
+                // 캐시 및 임시 파일
+                '**/.cache/**',
+                '**/.temp/**',
+                '**/.tmp/**',
+                '**/__pycache__/**',               // Python
+                '**/.pytest_cache/**',             // Python pytest
+                '**/.ruff_cache/**',               // Python ruff
+                '**/.mypy_cache/**',               // Python mypy
+                '**/.tox/**',                      // Python tox
+                '**/.nyc_output/**',               // Node.js nyc
+                '**/coverage/**',                  // 테스트 커버리지
+                '**/.turbo/**',                    // Turborepo
+                '**/.parcel-cache/**',             // Parcel
+                '**/.sass-cache/**',               // Sass
+
+                // 버전 관리
+                '**/.git/**',
+                '**/.svn/**',
+                '**/.hg/**',
+
+                // IDE/에디터 설정
+                '**/.idea/**',                     // IntelliJ IDEA
+                '**/.vscode/**',                   // VS Code
+                '**/.vs/**',                       // Visual Studio
+
+                // 가상 환경
+                '**/venv/**',                      // Python
+                '**/.venv/**',                     // Python
+                '**/env/**',                       // Python
+                '**/.virtualenv/**',               // Python
+
+                // 로그 및 시스템 파일
+                '**/logs/**',
+                '**/*.log',
+                '**/.DS_Store',                    // macOS
+                '**/Thumbs.db',                    // Windows
+                '**/desktop.ini'                   // Windows
             ],
             nodir: true,                           // 디렉토리 제외, 파일만
             follow: true,                          // 심볼릭 링크 추적
@@ -111,18 +158,12 @@ export async function globSearch({
         // 파일 정보 구성
         debugLog(`Processing file paths...`);
         const results = limitedMatches.map((filePath, index) => {
-            const absolutePath = resolve(resolvedCwd, filePath);
             if (index < 3) {  // 처음 3개만 상세 로깅
                 debugLog(`  File #${index + 1}:`);
                 debugLog(`    - Relative: "${filePath}"`);
                 debugLog(`    - Base: "${resolvedCwd}"`);
-                debugLog(`    - Absolute: "${absolutePath}"`);
-                debugLog(`    - Absolute starts with '/': ${absolutePath.startsWith('/')}`);
             }
-            return {
-                file_path: filePath,
-                absolute_path: absolutePath
-            };
+            return filePath;
         });
         if (results.length > 3) {
             debugLog(`  ... and ${results.length - 3} more files`);
