@@ -19,6 +19,7 @@ import { abortCurrentRequest } from "./ai_request.js";
 import { promises as fs } from 'fs';
 import { resolve } from 'path';
 import { createDebugLogger } from '../util/debug_log.js';
+import { ERROR_VERBOSITY } from '../config/feature_flags.js';
 
 const debugLog = createDebugLogger('session.log', 'session');
 
@@ -1011,15 +1012,24 @@ export async function runSession(options) {
 
         // 에러 메시지를 history에 표시 (한 번에 통합)
         const detailMessage = error?.error?.message || errorMessage;
-        const consolidatedErrorMessage = [
-            `[Session] Internal session error: ${errorType}`,
-            `  ├─ Message: ${detailMessage}`,
-            `  ├─ Code: ${errorCode}`,
-            `  ├─ Status: ${errorStatus}`,
-            `  ├─ Nested Error: ${error?.error ? JSON.stringify(error.error, null, 2) : 'None'}`,
-            `  ├─ Full Error Object: ${JSON.stringify(error, null, 2)}`,
-            `  └─ Stack trace: ${errorStack}`
-        ].join('\n');
+
+        let consolidatedErrorMessage;
+        if (ERROR_VERBOSITY === 'verbose') {
+            // 상세 모드: 모든 에러 정보 표시
+            consolidatedErrorMessage = [
+                `[Session] Internal session error: ${errorType}`,
+                `  ├─ Message: ${detailMessage}`,
+                `  ├─ Code: ${errorCode}`,
+                `  ├─ Status: ${errorStatus}`,
+                `  ├─ Nested Error: ${error?.error ? JSON.stringify(error.error, null, 2) : 'None'}`,
+                `  ├─ Full Error Object: ${JSON.stringify(error, null, 2)}`,
+                `  └─ Stack trace: ${errorStack}`
+            ].join('\n');
+        } else {
+            // 간결 모드 (기본값): 에러 메시지만 표시
+            consolidatedErrorMessage = `[Session] Internal session error: ${detailMessage}`;
+        }
+
         uiEvents.addErrorMessage(consolidatedErrorMessage);
 
         // 에러를 throw하지 않고 정상적으로 종료

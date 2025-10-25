@@ -7,6 +7,7 @@ import { Box, Text, useInput } from 'ink';
 import { theme } from '../themes/semantic-tokens.js';
 import { CLAUDE_MODELS, getClaude4Models, getClaude3Models, DEFAULT_CLAUDE_MODEL } from '../../config/claude_models.js';
 import { OPENAI_MODELS, getGPT5Models, DEFAULT_OPENAI_MODEL } from '../../config/openai_models.js';
+import { ENABLE_ANTHROPIC_PROVIDER } from '../../config/feature_flags.js';
 
 const STEPS = {
     PROVIDER: 'provider',
@@ -18,7 +19,9 @@ const STEPS = {
 };
 
 export function SetupWizard({ onComplete, onCancel }) {
-    const [step, setStep] = useState(STEPS.PROVIDER);
+    // Feature flag에 따라 초기 단계 결정
+    const initialStep = ENABLE_ANTHROPIC_PROVIDER ? STEPS.PROVIDER : STEPS.OPENAI_KEY;
+    const [step, setStep] = useState(initialStep);
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [textInput, setTextInput] = useState('');
 
@@ -148,7 +151,7 @@ export function SetupWizard({ onComplete, onCancel }) {
     const getMaxIndexForStep = (currentStep) => {
         switch (currentStep) {
             case STEPS.PROVIDER:
-                return 1; // 2 options
+                return ENABLE_ANTHROPIC_PROVIDER ? 1 : 0; // 2 options if enabled, 1 if disabled
             case STEPS.OPENAI_MODEL:
                 return getGPT5Models().length - 1;
             case STEPS.OPENAI_EFFORT:
@@ -177,20 +180,27 @@ export function SetupWizard({ onComplete, onCancel }) {
     const renderStep = () => {
         switch (step) {
             case STEPS.PROVIDER:
+                const providerOptions = ENABLE_ANTHROPIC_PROVIDER
+                    ? [
+                        'OpenAI (GPT-5, GPT-4, o1 series)',
+                        'Anthropic (Claude series)'
+                    ]
+                    : [
+                        'OpenAI (GPT-5, GPT-4, o1 series)'
+                    ];
+
                 return React.createElement(Box, { flexDirection: 'column' },
                     React.createElement(Text, { bold: true, color: theme.text.accent }, '1. Choose AI Provider:'),
                     React.createElement(Text, null),
-                    renderOptions([
-                        'OpenAI (GPT-5, GPT-4, o1 series)',
-                        'Anthropic (Claude series)'
-                    ]),
+                    renderOptions(providerOptions),
                     React.createElement(Text, null),
                     React.createElement(Text, { dimColor: true }, '↑↓: Navigate  Enter: Confirm')
                 );
 
             case STEPS.OPENAI_KEY:
+                const openaiKeyStep = ENABLE_ANTHROPIC_PROVIDER ? '2' : '1';
                 return React.createElement(Box, { flexDirection: 'column' },
-                    React.createElement(Text, { bold: true, color: theme.text.accent }, '2. OpenAI API Key:'),
+                    React.createElement(Text, { bold: true, color: theme.text.accent }, `${openaiKeyStep}. OpenAI API Key:`),
                     React.createElement(Text, { color: theme.text.secondary }, '   Get your API key from: https://platform.openai.com/account/api-keys'),
                     React.createElement(Text, null),
                     React.createElement(Box, {
@@ -205,8 +215,9 @@ export function SetupWizard({ onComplete, onCancel }) {
                 );
 
             case STEPS.OPENAI_MODEL:
+                const openaiModelStep = ENABLE_ANTHROPIC_PROVIDER ? '3' : '2';
                 return React.createElement(Box, { flexDirection: 'column' },
-                    React.createElement(Text, { bold: true, color: theme.text.accent }, '3. Choose Model:'),
+                    React.createElement(Text, { bold: true, color: theme.text.accent }, `${openaiModelStep}. Choose Model:`),
                     React.createElement(Text, null),
                     renderOptions(
                         getGPT5Models().map(modelId => {
@@ -219,8 +230,9 @@ export function SetupWizard({ onComplete, onCancel }) {
                 );
 
             case STEPS.OPENAI_EFFORT:
+                const openaiEffortStep = ENABLE_ANTHROPIC_PROVIDER ? '4' : '3';
                 return React.createElement(Box, { flexDirection: 'column' },
-                    React.createElement(Text, { bold: true, color: theme.text.accent }, '4. Reasoning Effort:'),
+                    React.createElement(Text, { bold: true, color: theme.text.accent }, `${openaiEffortStep}. Reasoning Effort:`),
                     React.createElement(Text, null),
                     renderOptions([
                         'minimal (Fastest)',

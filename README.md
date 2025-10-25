@@ -79,13 +79,11 @@ aiexecode
 ```
 
 On first run, the setup wizard appears:
-1. Choose AI provider (OpenAI or Anthropic)
-2. Enter API key
-3. Select model
+1. Enter API key
+2. Select model
 
 **Where to get API keys:**
 - OpenAI: https://platform.openai.com/account/api-keys
-- Anthropic: https://console.anthropic.com/settings/keys
 
 ### Step 2: Using It
 
@@ -154,6 +152,18 @@ Convenient commands you can use during conversation:
 
 ---
 
+## Supported Models
+
+AIEXEcode supports OpenAI GPT-5 series models:
+- gpt-5
+- gpt-5-mini (default)
+- gpt-5-nano
+- gpt-5-codex
+
+Use `/model list` to see all available models or `/model <model-name>` to switch models.
+
+---
+
 ## Advanced Features
 
 ### Project-Specific Customization
@@ -186,7 +196,7 @@ aiexecode mcp list
 - macOS or Linux (Windows not supported)
 - Node.js 14 or higher
 - ripgrep (code search tool)
-- OpenAI or Anthropic API key
+- OpenAI API key
 
 **Optional:**
 - Python 3 (for Python code execution support)

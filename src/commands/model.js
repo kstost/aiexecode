@@ -4,6 +4,7 @@ import { resetAIClients } from '../system/ai_request.js';
 import { CLAUDE_MODELS, getClaude4Models, getClaude3Models, DEFAULT_CLAUDE_MODEL } from '../config/claude_models.js';
 import { OPENAI_MODELS, getGPT5Models, DEFAULT_OPENAI_MODEL } from '../config/openai_models.js';
 import { renderInkComponent } from '../ui/utils/renderInkComponent.js';
+import { ENABLE_ANTHROPIC_PROVIDER } from '../config/feature_flags.js';
 
 // 지원하는 모델 목록
 // OpenAI: https://platform.openai.com/docs/pricing
@@ -16,6 +17,10 @@ const MODELS = {
 // 모델 ID로 provider 찾기
 function getProviderForModel(modelId) {
     for (const [provider, models] of Object.entries(MODELS)) {
+        // Feature flag가 비활성화된 경우 anthropic provider 제외
+        if (!ENABLE_ANTHROPIC_PROVIDER && provider === 'anthropic') {
+            continue;
+        }
         if (models[modelId]) {
             return provider;
         }
@@ -34,19 +39,23 @@ async function listAllModels() {
         ...MODELS.openai[id]
     }));
 
-    const claude4Models = getClaude4Models();
-    const claude3Models = getClaude3Models();
+    // Feature flag에 따라 Claude 모델 표시 여부 결정
+    let claudeModels = null;
+    if (ENABLE_ANTHROPIC_PROVIDER) {
+        const claude4Models = getClaude4Models();
+        const claude3Models = getClaude3Models();
 
-    const claudeModels = {
-        claude4: claude4Models.map(id => ({
-            id,
-            ...CLAUDE_MODELS[id]
-        })),
-        claude3: claude3Models.map(id => ({
-            id,
-            ...CLAUDE_MODELS[id]
-        }))
-    };
+        claudeModels = {
+            claude4: claude4Models.map(id => ({
+                id,
+                ...CLAUDE_MODELS[id]
+            })),
+            claude3: claude3Models.map(id => ({
+                id,
+                ...CLAUDE_MODELS[id]
+            }))
+        };
+    }
 
     const component = React.createElement(ModelListView, {
         openaiModels,
@@ -93,7 +102,9 @@ async function showCurrentModel() {
  */
 export default {
     name: 'model',
-    description: 'Select AI model (OpenAI or Anthropic)',
+    description: ENABLE_ANTHROPIC_PROVIDER
+        ? 'Select AI model (OpenAI or Anthropic)'
+        : 'Select AI model (OpenAI)',
     usage: '/model [model-id] or /model list',
     handler: async (args, context) => {
         // 인자가 없으면 현재 모델 표시

@@ -1,22 +1,30 @@
 import { uiEvents } from '../system/ui_events.js';
 import { loadSettings, saveSettings, SETTINGS_FILE } from '../util/config.js';
 import { resetAIClients } from '../system/ai_request.js';
+import { ENABLE_ANTHROPIC_PROVIDER } from '../config/feature_flags.js';
 
 /**
  * /apikey 커맨드 - AI Provider 및 API 키 설정
  */
 export default {
     name: 'apikey',
-    description: 'Set AI provider and API key (openai or anthropic)',
-    usage: '/apikey <provider> <api-key>',
+    description: ENABLE_ANTHROPIC_PROVIDER
+        ? 'Set AI provider and API key (openai or anthropic)'
+        : 'Set AI provider and API key (openai)',
+    usage: ENABLE_ANTHROPIC_PROVIDER
+        ? '/apikey <provider> <api-key>'
+        : '/apikey openai <api-key>',
     handler: async (args, context) => {
         // 인자 확인
         if (!args || args.length < 2) {
+            const usageExamples = ENABLE_ANTHROPIC_PROVIDER
+                ? `  /apikey openai sk-proj-...\n  /apikey anthropic sk-ant-...`
+                : `  /apikey openai sk-proj-...`;
+
             uiEvents.addSystemMessage(
                 `Please enter provider and API key.\n\n` +
                 `Usage:\n` +
-                `  /apikey openai sk-proj-...\n` +
-                `  /apikey anthropic sk-ant-...`
+                usageExamples
             );
             return;
         }
@@ -28,10 +36,18 @@ export default {
             const providerArg = args[0].toLowerCase();
 
             // Provider 검증
-            if (providerArg !== 'openai' && providerArg !== 'anthropic') {
+            const validProviders = ENABLE_ANTHROPIC_PROVIDER
+                ? ['openai', 'anthropic']
+                : ['openai'];
+
+            if (!validProviders.includes(providerArg)) {
+                const validProvidersText = ENABLE_ANTHROPIC_PROVIDER
+                    ? 'openai, anthropic'
+                    : 'openai';
+
                 uiEvents.addSystemMessage(
                     `Invalid provider: ${providerArg}\n\n` +
-                    `Valid providers: openai, anthropic`
+                    `Valid providers: ${validProvidersText}`
                 );
                 return;
             }
