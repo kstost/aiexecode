@@ -3,6 +3,10 @@
 # Distribution Script for aiexecode
 # Build and publish to npm registry
 
+rm -rf payload_viewer/out
+
+git add . && git commit -m 'auto' && git push
+
 echo "📦 Starting distribution process..."
 
 # Check if we're in the project root
