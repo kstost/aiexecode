@@ -9,15 +9,12 @@ import { appendFileSync, existsSync, mkdirSync } from 'fs';
 
 /**
  * 디버그 로그를 파일에 기록합니다.
- * 로컬 개발 환경(node index.js)에서만 로그를 기록합니다.
+ * 모든 환경에서 로그를 기록합니다.
  * @param {string} logFileName - 로그 파일 이름 (예: 'ui.log', 'session.log')
  * @param {string} context - 로그 컨텍스트 (예: 'MainContent', 'AppContext')
  * @param {string} message - 로그 메시지
  */
 export function debugLog(logFileName, context, message) {
-    // 개발 모드에서만 로그 기록 (node index.js로 실행 시)
-    if (process.env.IS_DEVELOPMENT !== 'true') return;
-
     try {
         const LOG_FILE = join(DEBUG_LOG_DIR, logFileName);
         const logDir = dirname(LOG_FILE);

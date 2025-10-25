@@ -26,7 +26,7 @@ const program = new Command();
 program
     .name('aiexecode')
     .description('AI-powered autonomous coding agent that executes development tasks through natural language missions')
-    .version('1.0.37')
+    .version('1.0.38')
     .option('-c, --continue <session_id>', 'Continue from previous session (16-char hex session ID)')
     .option('--viewer', 'Start payload viewer web server')
     .option('-p, --port <port>', 'Port for payload viewer (default: 3300)', '3300')
@@ -232,9 +232,7 @@ if (dependencyCheck.warnings && dependencyCheck.warnings.length > 0) {
 
 // 임시 폴더 정리
 fs.rmSync(PAYLOAD_LOG_DIR, { recursive: true, force: true }); // 홈 디렉토리의 .aiexe/payload_log (모든 모드)
-if (process.env.IS_DEVELOPMENT === 'true') {
-    fs.rmSync(DEBUG_LOG_DIR, { recursive: true, force: true }); // cwd의 .aiexe/debuglog (개발 모드만)
-}
+fs.rmSync(DEBUG_LOG_DIR, { recursive: true, force: true }); // 홈 디렉토리의 .aiexe/debuglog (모든 모드)
 
 // 설정 로드
 await ensureConfigDirectory();
@@ -436,7 +434,7 @@ uiInstance = startUI({
     onExit: handleExit,
     commands: commandList,
     model: currentModel,
-    version: '1.0.37',
+    version: '1.0.38',
     initialHistory,
     reasoningEffort: currentReasoningEffort
 });

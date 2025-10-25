@@ -40,7 +40,7 @@ export const CONFIG_DIR = join(getHomeDirectory(), '.aiexe');
 export const SETTINGS_FILE = join(CONFIG_DIR, 'settings.json');
 export const MCP_CONFIG_FILE = join(CONFIG_DIR, 'mcp_config.json');
 export const PAYLOAD_LOG_DIR = join(CONFIG_DIR, 'payload_log');
-export const DEBUG_LOG_DIR = join(PROJECT_ROOT, '.aiexe', 'debuglog');
+export const DEBUG_LOG_DIR = join(CONFIG_DIR, 'debuglog');
 export const DEBUG_LOG_FILE = join(CONFIG_DIR, 'debug.txt'); // Deprecated: 호환성을 위해 유지
 const DEFAULT_SETTINGS = {
     AI_PROVIDER: 'openai', // 'openai' or 'anthropic'
