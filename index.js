@@ -193,10 +193,34 @@ if (shouldContinue) {
     consolelog(chalk.cyan(`New session ID: ${process.app_custom.sessionID}`));
 }
 
-process.app_custom.systemInfo = await getSystemInfo();
+// 임시 폴더 정리
+fs.rmSync(PAYLOAD_LOG_DIR, { recursive: true, force: true }); // 홈 디렉토리의 .aiexe/payload_log (모든 모드)
+fs.rmSync(DEBUG_LOG_DIR, { recursive: true, force: true }); // 홈 디렉토리의 .aiexe/debuglog (모든 모드)
+
+// 설정 로드 (시스템 정보 수집 전에 먼저 로드)
+await ensureConfigDirectory();
+
+// 초기 설정 확인 및 Setup Wizard 실행
+const configured = await isConfigured();
+if (!configured) {
+    const setupCompleted = await runSetupWizard();
+
+    if (!setupCompleted) {
+        console.log(chalk.red('\nSetup cancelled. Please run again to configure.\n'));
+        process.exit(1);
+    }
+}
+
+const settings = await loadSettings();
+
+// Python 도구 사용 여부 확인
+const skipPython = settings?.TOOLS_ENABLED?.run_python_code === false;
+
+// 시스템 정보 수집 (Python 도구가 비활성화된 경우 Python 체크 생략)
+process.app_custom.systemInfo = await getSystemInfo({ skipPython });
 
 // 의존성 체크 (flutter doctor와 유사)
-const dependencyCheck = await checkDependencies();
+const dependencyCheck = await checkDependencies({ skipPython });
 if (!dependencyCheck.success) {
     console.log(chalk.red.bold('\n❌ Dependency Check Failed\n'));
 
@@ -229,26 +253,6 @@ if (dependencyCheck.warnings && dependencyCheck.warnings.length > 0) {
         }
     });
 }
-
-// 임시 폴더 정리
-fs.rmSync(PAYLOAD_LOG_DIR, { recursive: true, force: true }); // 홈 디렉토리의 .aiexe/payload_log (모든 모드)
-fs.rmSync(DEBUG_LOG_DIR, { recursive: true, force: true }); // 홈 디렉토리의 .aiexe/debuglog (모든 모드)
-
-// 설정 로드
-await ensureConfigDirectory();
-
-// 초기 설정 확인 및 Setup Wizard 실행
-const configured = await isConfigured();
-if (!configured) {
-    const setupCompleted = await runSetupWizard();
-
-    if (!setupCompleted) {
-        console.log(chalk.red('\nSetup cancelled. Please run again to configure.\n'));
-        process.exit(1);
-    }
-}
-
-const settings = await loadSettings();
 
 // 환경변수 설정
 const provider = settings?.AI_PROVIDER || 'openai';

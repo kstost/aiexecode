@@ -100,24 +100,32 @@ export async function hasCommand(command) {
 
 /**
  * 시스템의 전체 정보를 수집하여 반환합니다.
+ * @param {Object} options - 옵션
+ * @param {boolean} options.skipPython - Python 체크를 생략할지 여부
  * @returns {Promise<Object>} 시스템 정보 객체
  */
-export async function getSystemInfo() {
+export async function getSystemInfo(options = {}) {
+    const { skipPython = false } = options;
     const osType = getOSType();
 
-    const [ripgrepPath, pythonPath, nodePath, bashPath] = await Promise.all([
+    // Python 체크를 조건부로 실행
+    const pathPromises = [
         getRipgrepPath(),
-        getPythonPath(),
+        skipPython ? Promise.resolve(null) : getPythonPath(),
         getNodePath(),
         getBashPath()
-    ]);
+    ];
 
-    const [hasRipgrep, hasPython, hasNode, hasBash] = await Promise.all([
+    const [ripgrepPath, pythonPath, nodePath, bashPath] = await Promise.all(pathPromises);
+
+    const commandPromises = [
         hasCommand('rg'),
-        hasCommand('python3').then(async (result) => result || await hasCommand('python')),
+        skipPython ? Promise.resolve(false) : hasCommand('python3').then(async (result) => result || await hasCommand('python')),
         hasCommand('node'),
         hasCommand('bash')
-    ]);
+    ];
+
+    const [hasRipgrep, hasPython, hasNode, hasBash] = await Promise.all(commandPromises);
 
     return {
         os: osType,
@@ -138,10 +146,12 @@ export async function getSystemInfo() {
 
 /**
  * 시스템 정보를 사람이 읽기 쉬운 문자열로 포맷팅합니다.
+ * @param {Object} options - 옵션
+ * @param {boolean} options.skipPython - Python 체크를 생략할지 여부
  * @returns {Promise<string>} 포맷팅된 시스템 정보
  */
-export async function getSystemInfoString() {
-    const info = await getSystemInfo();
+export async function getSystemInfoString(options = {}) {
+    const info = await getSystemInfo(options);
 
     const lines = [
         `Operating System: ${info.os}`,
@@ -158,10 +168,13 @@ export async function getSystemInfoString() {
 
 /**
  * 필수 의존성을 체크하고 문제가 있으면 설치 방법을 안내합니다.
+ * @param {Object} options - 옵션
+ * @param {boolean} options.skipPython - Python 체크를 생략할지 여부
  * @returns {Promise<Object>} { success: boolean, issues: Array, os: string }
  */
-export async function checkDependencies() {
-    const info = await getSystemInfo();
+export async function checkDependencies(options = {}) {
+    const { skipPython = false } = options;
+    const info = await getSystemInfo({ skipPython });
     const issues = [];
 
     // Windows 체크
@@ -229,9 +242,9 @@ export async function checkDependencies() {
         }
     }
 
-    // python 체크 (선택사항 - 경고만 표시)
+    // python 체크 (선택사항 - 경고만 표시, skipPython이 true면 생략)
     const warnings = [];
-    if (!info.commands.hasPython) {
+    if (!skipPython && !info.commands.hasPython) {
         const installInstructions = info.os === 'macos'
             ? 'brew install python3'
             : info.os === 'linux'
