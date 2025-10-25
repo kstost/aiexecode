@@ -16,6 +16,7 @@ import { resolve, join, dirname } from 'path';
 import { DEBUG_LOG_DIR } from '../../util/config.js';
 import { createHash } from 'crypto';
 import { createDebugLogger } from '../../util/debug_log.js';
+import { prepareEditReplaceDiff } from '../utils/diffUtils.js';
 
 const debugLog = createDebugLogger('ui_components.log', 'HistoryItemDisplay');
 const OLDSTRING_LOG_FILE = join(DEBUG_LOG_DIR, 'oldstring.txt');
@@ -389,68 +390,50 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
                         };
                     } else {
                         debugLog('old_string FOUND in snapshot');
-                        // 라인 번호 계산
-                        const beforeOldString = content.substring(0, oldStringIndex);
-                        const startLine = beforeOldString.split('\n').length;
 
-                        // Calculate actual line count (handle trailing newline)
-                        const oldStringSplit = effectiveArgs.old_string.split('\n');
-                        const oldStringLines = effectiveArgs.old_string.endsWith('\n') 
-                            ? oldStringSplit.length - 1 
-                            : oldStringSplit.length;
-                        const endLine = startLine + oldStringLines - 1;
+                        // Use shared diff preparation logic
+                        const result = prepareEditReplaceDiff(
+                            effectiveArgs.old_string || '',
+                            effectiveArgs.new_string || '',
+                            content
+                        );
 
-                        debugLog(`[EDIT_FILE_REPLACE] old_string analysis:`);
-                        debugLog(`  - split length: ${oldStringSplit.length}`);
-                        debugLog(`  - ends with newline: ${effectiveArgs.old_string.endsWith('\n')}`);
-                        debugLog(`  - calculated line count: ${oldStringLines}`);
-                        debugLog(`Calculated startLine: ${startLine}, endLine: ${endLine}`);
+                        if (result.error) {
+                            debugLog(`[EDIT_FILE_REPLACE] prepareEditReplaceDiff returned error: ${result.error}`);
+                            diffData = {
+                                loaded: true,
+                                hasContent: false,
+                                error: result.error
+                            };
+                        } else {
+                            debugLog(`[EDIT_FILE_REPLACE] Content for diff:`);
+                            debugLog(`  - fullOldContent length: ${result.oldContent.length} bytes`);
+                            debugLog(`  - fullOldContent lines: ${result.oldContent.split('\n').length}`);
+                            debugLog(`  - fullNewContent length: ${result.newContent.length} bytes`);
+                            debugLog(`  - fullNewContent lines: ${result.newContent.split('\n').length}`);
+                            debugLog(`Full old content preview: ${result.oldContent.substring(0, 100)}...`);
+                            debugLog(`Full new content preview: ${result.newContent.substring(0, 100)}...`);
+                            debugLog(`Context before lines: ${result.contextBefore.length}, after lines: ${result.contextAfter.length}`);
 
-                        const lines = content.split('\n');
-                        const actualLines = content === '' ? [] :
-                            (content.endsWith('\n') ? lines.slice(0, -1) : lines);
+                            diffData = {
+                                loaded: true,
+                                hasContent: true,
+                                oldContent: result.oldContent,
+                                newContent: result.newContent,
+                                contextBefore: result.contextBefore,
+                                contextAfter: result.contextAfter,
+                                contextStartLine: result.contextStartLine,
+                                startLine: result.startLine,
+                                endLine: result.endLine
+                            };
 
-                        // For edit_file_replace, use old_string and new_string directly
-                        // Normalize trailing newlines to ensure consistent line counting
-                        const fullOldContent = effectiveArgs.old_string.replace(/\n$/, '');
-                        const fullNewContent = effectiveArgs.new_string.replace(/\n$/, '');
-
-                        debugLog(`[EDIT_FILE_REPLACE] Content for diff:`);
-                        debugLog(`  - fullOldContent length: ${fullOldContent.length} bytes`);
-                        debugLog(`  - fullOldContent lines: ${fullOldContent.split('\n').length}`);
-                        debugLog(`  - fullNewContent length: ${fullNewContent.length} bytes`);
-                        debugLog(`  - fullNewContent lines: ${fullNewContent.split('\n').length}`);
-                        debugLog(`Full old content preview: ${fullOldContent.substring(0, 100)}...`);
-                        debugLog(`Full new content preview: ${fullNewContent.substring(0, 100)}...`);
-
-                        // Extract context (2 lines before and after)
-                        const contextLines = 2;
-                        const contextStartIdx = Math.max(0, startLine - 1 - contextLines);
-                        const contextEndIdx = Math.min(actualLines.length, endLine + contextLines);
-
-                        const ctxBefore = actualLines.slice(contextStartIdx, startLine - 1);
-                        const ctxAfter = actualLines.slice(endLine, contextEndIdx);
-
-                        debugLog(`Context before lines: ${ctxBefore.length}, after lines: ${ctxAfter.length}`);
-
-                        diffData = {
-                            loaded: true,
-                            hasContent: true,
-                            oldContent: fullOldContent,
-                            newContent: fullNewContent,
-                            contextBefore: ctxBefore,
-                            contextAfter: ctxAfter,
-                            contextStartLine: contextStartIdx + 1,
-                            startLine: startLine,
-                            endLine: endLine
-                        };
-
-                        debugLog('[EDIT_FILE_REPLACE] diffData created:');
-                        debugLog(`  - startLine: ${startLine}, endLine: ${endLine}`);
-                        debugLog(`  - contextStartLine: ${contextStartIdx + 1}`);
-                        debugLog(`  - contextBefore: ${ctxBefore.length} lines`);
-                        debugLog(`  - contextAfter: ${ctxAfter.length} lines`);
-                        debugLog('diffData created successfully with hasContent: true');
+                            debugLog('[EDIT_FILE_REPLACE] diffData created:');
+                            debugLog(`  - startLine: ${result.startLine}, endLine: ${result.endLine}`);
+                            debugLog(`  - contextStartLine: ${result.contextStartLine}`);
+                            debugLog(`  - contextBefore: ${result.contextBefore.length} lines`);
+                            debugLog(`  - contextAfter: ${result.contextAfter.length} lines`);
+                            debugLog('diffData created successfully with hasContent: true');
+                        }
                     }
                 }
             } catch (error) {

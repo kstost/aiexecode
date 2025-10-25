@@ -11,6 +11,7 @@ import { getToolDisplayName } from '../../system/tool_registry.js';
 import { getFileSnapshot } from '../../system/file_integrity.js';
 import { resolve } from 'path';
 import { toDisplayPath } from '../../util/path_helper.js';
+import { prepareEditReplaceDiff } from '../utils/diffUtils.js';
 
 const lowlight = createLowlight(common);
 
@@ -392,87 +393,19 @@ function renderToolArgs(toolName, args, mcpToolInfo = null) {
 
         useEffect(() => {
             function loadFileContent() {
-                try {
-                    // 스냅샷에서 파일 내용 조회 (절대 경로로 변환)
-                    const absolutePath = resolve(args.file_path);
-                    const snapshot = getFileSnapshot(absolutePath);
-                    const content = snapshot?.content || '';
+                // 스냅샷에서 파일 내용 조회 (절대 경로로 변환)
+                const absolutePath = resolve(args.file_path);
+                const snapshot = getFileSnapshot(absolutePath);
+                const content = snapshot?.content || '';
 
-                    if (!content) {
-                        setDiffData({
-                            error: 'File not read yet or empty'
-                        });
-                        return;
-                    }
+                // Use shared diff preparation logic
+                const result = prepareEditReplaceDiff(
+                    args.old_string || '',
+                    args.new_string || '',
+                    content
+                );
 
-                    // old_string 찾기
-                    const oldString = args.old_string || '';
-                    const newString = args.new_string || '';
-                    const index = content.indexOf(oldString);
-
-                    if (index === -1) {
-                        setDiffData({
-                            error: 'old_string not found in file'
-                        });
-                        return;
-                    }
-
-                    // 라인 번호 계산
-                    const beforeMatch = content.substring(0, index);
-                    const startLine = beforeMatch.split('\n').length;
-
-                    // Calculate actual line count (handle trailing newline)
-                    const oldStringSplit = oldString.split('\n');
-                    const oldStringLines = oldString.endsWith('\n')
-                        ? oldStringSplit.length - 1
-                        : oldStringSplit.length;
-                    const endLine = startLine + oldStringLines - 1;
-
-                    // 파일을 라인 단위로 분할
-                    const lines = content.split('\n');
-                    const actualLines = content === '' ? [] :
-                        (content.endsWith('\n') ? lines.slice(0, -1) : lines);
-
-                    // For partial line replacements, show the full line context
-                    // For multi-line replacements, use the matched content directly
-                    let fullOldContent, fullNewContent;
-
-                    if (oldStringLines === 1 && !oldString.includes('\n')) {
-                        // Single line partial replacement - extract and show full lines
-                        const affectedLines = actualLines.slice(startLine - 1, endLine);
-                        fullOldContent = affectedLines.join('\n');
-                        // Replace old_string with new_string in each affected line
-                        fullNewContent = affectedLines.map(line =>
-                            line.replace(oldString, newString)
-                        ).join('\n');
-                    } else {
-                        // Multi-line replacement - use the matched content directly
-                        fullOldContent = oldString.replace(/\n$/, '');
-                        fullNewContent = newString.replace(/\n$/, '');
-                    }
-
-                    // Extract context (2 lines before and after)
-                    const contextLines = 2;
-                    const contextStartIdx = Math.max(0, startLine - 1 - contextLines);
-                    const contextEndIdx = Math.min(actualLines.length, endLine + contextLines);
-
-                    const ctxBefore = actualLines.slice(contextStartIdx, startLine - 1);
-                    const ctxAfter = actualLines.slice(endLine, contextEndIdx);
-
-                    setDiffData({
-                        startLine: startLine,
-                        endLine: endLine,
-                        oldContent: fullOldContent,
-                        newContent: fullNewContent,
-                        contextBefore: ctxBefore,
-                        contextAfter: ctxAfter,
-                        contextStartLine: contextStartIdx + 1
-                    });
-                } catch (error) {
-                    setDiffData({
-                        error: error.message
-                    });
-                }
+                setDiffData(result);
             }
 
             loadFileContent();

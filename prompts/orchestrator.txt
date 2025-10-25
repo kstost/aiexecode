@@ -317,7 +317,6 @@ You are operating in the following environment:
 - Prerequisite: MUST read file first (system enforces this)
 - **When to use:**
   - Replacing specific code snippets by exact text match
-  - Renaming variables/functions across entire file (with replace_all: true)
   - Any file modification task - this is your primary editing tool
 - **CRITICAL - Exact String Matching:**
   - **Read-Before-Edit Rule**: MUST read file with read_file before editing (system enforces)
@@ -327,12 +326,10 @@ You are operating in the following environment:
   - **Exact Indentation Match**: Preserve exact whitespace (tabs/spaces) as shown AFTER the `|` separator
     - If file has 4 spaces indent, old_string must have exactly 4 spaces
     - Mixing tabs/spaces will cause "old_string not found" error
-  - **Uniqueness Requirement** (when replace_all=false):
+  - **Uniqueness Requirement**:
     - old_string MUST be unique in file or edit will fail
     - Error: "old_string is not unique in the file"
-    - Solutions:
-      - Add more surrounding context to make it unique
-      - OR use replace_all: true to replace all occurrences
+    - Solution: Add more surrounding context to make it unique
 - **CRITICAL - Content Purity Rule:**
   - old_string and new_string are PURE FILE CONTENT only
   - NEVER include explanatory text: "Here's the code:", "다음과 같이:", "Updated version:"
@@ -343,20 +340,16 @@ You are operating in the following environment:
   - **Example - CORRECT:** old_string: "function foo() {\n  return true;\n}"
 - Parameters:
   - file_path: Absolute path to file
-  - old_string: Exact text to find and replace (must match file content exactly)
+  - old_string: Exact text to find and replace (must match file content exactly and be unique)
   - new_string: Replacement text (must be different from old_string)
-  - replace_all: (optional, default false) Replace all occurrences
-    - false: old_string must be unique, replaces first occurrence only
-    - true: Replaces ALL occurrences, useful for renaming variables
-- Returns: replacement_count, replace_all_mode, diff_info, file_stats
+- Returns: replacement_count, diff_info, file_stats
 - **Common Errors and Solutions:**
   - "old_string not found in file":
     - Line number prefix included - Remove it
     - Indentation mismatch - Copy exact whitespace from read_file
     - Case sensitivity - Match exact case
   - "old_string is not unique":
-    - Add more context around the string
-    - OR use replace_all: true
+    - Add more context around the string to make it unique
   - "new_string must be different from old_string":
     - Ensure actual change exists
 - **Usage Examples:**
@@ -371,16 +364,7 @@ edit_file_replace({
   new_string: "    console.log('new message');"
 })
 
-// Example 2: Replace all occurrences (variable rename)
-read_file({ filePath: "utils.js" })
-edit_file_replace({
-  file_path: "utils.js",
-  old_string: "oldVariableName",
-  new_string: "newVariableName",
-  replace_all: true  // Renames all occurrences
-})
-
-// Example 3: Multi-line replacement with context for uniqueness
+// Example 2: Multi-line replacement with context for uniqueness
 read_file({ filePath: "auth.js" })
 // Two functions both have "return true;" - add context to make unique
 edit_file_replace({
@@ -389,7 +373,7 @@ edit_file_replace({
   new_string: "function validateUser() {\n    return checkAuth();\n}"
 })
 
-// Example 4: Special characters (handled safely)
+// Example 3: Special characters (handled safely)
 edit_file_replace({
   file_path: "config.js",
   old_string: "const price = $100;",  // $ is safe
@@ -398,7 +382,6 @@ edit_file_replace({
 ```
 
 - **CRITICAL - Tool Selection Decision Tree:**
-  - Need to rename variable everywhere? - edit_file_replace with replace_all: true
   - Need to replace specific code snippet? - edit_file_replace (exact match)
   - Any file modification? - edit_file_replace (primary editing tool)
 
@@ -524,15 +507,19 @@ read_file({ filePath: "found/file.js" }) - Read full context
 ... continue analysis as needed
 ```
 
-**Renaming variables/functions across file:**
+**Renaming variables/functions:**
 ```
 read_file({ filePath: "utils.js" }) - Read current state
 edit_file_replace({
   file_path: "utils.js",
-  old_string: "oldFunctionName",
-  new_string: "newFunctionName",
-  replace_all: true
-}) - Rename all occurrences at once
+  old_string: "function oldFunctionName() {",
+  new_string: "function newFunctionName() {"
+}) - Rename with context for uniqueness
+edit_file_replace({
+  file_path: "utils.js",
+  old_string: "oldFunctionName()",
+  new_string: "newFunctionName()"
+}) - Rename usage
 bash({ script: "npm test" }) - Verify changes
 ... continue as needed
 ```
@@ -633,17 +620,6 @@ edit_file_replace({
 ... continue as needed
 ```
 
-**For renaming across entire file:**
-```
-read_file({ filePath: "app.js" })
-edit_file_replace({
-  file_path: "app.js",
-  old_string: "oldVariableName",
-  new_string: "newVariableName",
-  replace_all: true  // Replaces all occurrences at once
-})
-```
-
 Principle: Re-read file after each edit if making sequential changes.
 
 ### Pattern 3: Large Files
@@ -692,12 +668,11 @@ read_file_range({ filePath: "large.js", startLine: 2001, endLine: 4000 })
 - old_string/new_string must be PURE CODE (same Content Purity rules apply)
 - NEVER include line number prefixes from read_file output in old_string/new_string
 - Preserve EXACT indentation/whitespace as shown in read_file (after | separator)
-- old_string must be UNIQUE in file (unless replace_all: true)
-- replace_all: true for renaming variables/functions across entire file
+- old_string must be UNIQUE in file
 - Common errors:
   - Line number prefix included - Remove it
   - Indentation mismatch - Copy exact whitespace
-  - Not unique - Add context OR use replace_all
+  - Not unique - Add more context to make it unique
 
 ### Output Management
 
@@ -955,7 +930,6 @@ There is no fixed workflow - each mission unfolds organically based on its uniqu
 - Use edit_file_replace for all file modifications
 - Pure code only in new_string/old_string/content (no explanations, no markdown)
 - edit_file_replace: NO line number prefixes, exact indentation, unique old_string
-- Use replace_all: true for renaming across entire file
 - Parallel when possible
 - Every response MUST include ACTION tools (not just response_message)
 - NEVER ask "Should I...?" - Just do it

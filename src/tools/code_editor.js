@@ -245,10 +245,9 @@ export const writeFileSchema = {
  * @param {string} params.file_path - 편집할 파일의 경로
  * @param {string} params.old_string - 교체할 기존 문자열 (파일 내에서 고유해야 함)
  * @param {string} params.new_string - 새로운 문자열
- * @param {boolean} params.replace_all - true일 경우 모든 발생을 교체 (기본값: false)
  * @returns {Promise<Object>} 편집 결과
  */
-export async function edit_file_replace({ file_path, old_string, new_string, replace_all = false }) {
+export async function edit_file_replace({ file_path, old_string, new_string }) {
     try {
         debugLog('========== edit_file_replace START ==========');
         debugLog(`Input parameters:`);
@@ -260,7 +259,6 @@ export async function edit_file_replace({ file_path, old_string, new_string, rep
         debugLog(`  - file_path starts with '../': ${file_path?.startsWith('../') || false}`);
         debugLog(`  old_string length: ${old_string?.length || 0} bytes`);
         debugLog(`  new_string length: ${new_string?.length || 0} bytes`);
-        debugLog(`  replace_all: ${replace_all}`);
         debugLog(`  - Current Working Directory: ${process.cwd()}`);
 
         // 경로를 절대경로로 정규화
@@ -391,47 +389,28 @@ export async function edit_file_replace({ file_path, old_string, new_string, rep
             debugLog(`Context around first match: ${JSON.stringify(context)}`);
         }
 
-        // replace_all이 false일 때 고유성 검증
-        debugLog(`Checking uniqueness (replace_all=${replace_all})...`);
-        if (!replace_all) {
-            const firstIndex = originalContent.indexOf(old_string);
-            const lastIndex = originalContent.lastIndexOf(old_string);
-            debugLog(`  First occurrence index: ${firstIndex}`);
-            debugLog(`  Last occurrence index: ${lastIndex}`);
+        // 고유성 검증
+        debugLog(`Checking uniqueness...`);
+        const firstIndex = originalContent.indexOf(old_string);
+        const lastIndex = originalContent.lastIndexOf(old_string);
+        debugLog(`  First occurrence index: ${firstIndex}`);
+        debugLog(`  Last occurrence index: ${lastIndex}`);
 
-            if (firstIndex !== lastIndex) {
-                debugLog(`ERROR: old_string is NOT unique (found at multiple positions)`);
-                debugLog('========== edit_file_replace ERROR END ==========');
-                return {
-                    operation_successful: false,
-                    error_message: `old_string is not unique in the file. Use replace_all: true to replace all occurrences, or provide more context to make old_string unique.`,
-                    target_file_path: absolutePath
-                };
-            }
-            debugLog(`old_string is unique (OK)`);
+        if (firstIndex !== lastIndex) {
+            debugLog(`ERROR: old_string is NOT unique (found at multiple positions)`);
+            debugLog('========== edit_file_replace ERROR END ==========');
+            return {
+                operation_successful: false,
+                error_message: `old_string is not unique in the file. Provide more context to make old_string unique.`,
+                target_file_path: absolutePath
+            };
         }
+        debugLog(`old_string is unique (OK)`);
 
-        // 문자열 교체
+        // 문자열 교체 (단일 교체)
         debugLog(`Performing string replacement...`);
-        let newContent;
-        let replacementCount;
-        if (replace_all) {
-            // 모든 발생 교체
-            debugLog(`Mode: replace_all=true`);
-            const escapedOld = escapeRegExp(old_string);
-            debugLog(`Escaped regex pattern length: ${escapedOld.length}`);
-            const regex = new RegExp(escapedOld, 'g');
-            const matches = originalContent.match(regex);
-            replacementCount = matches ? matches.length : 0;
-            debugLog(`Found ${replacementCount} occurrences to replace`);
-            // new_string에 $ 특수문자가 있어도 안전하게 교체하기 위해 함수 사용
-            newContent = originalContent.replace(regex, () => new_string);
-        } else {
-            // 첫 번째 발생만 교체
-            debugLog(`Mode: replace_all=false (single replacement)`);
-            replacementCount = 1;
-            newContent = originalContent.replace(old_string, new_string);
-        }
+        const newContent = originalContent.replace(old_string, new_string);
+        const replacementCount = 1;
         debugLog(`Replacement complete. New content length: ${newContent.length} bytes`);
 
         // 파일 저장 (절대경로 사용)
@@ -457,7 +436,6 @@ export async function edit_file_replace({ file_path, old_string, new_string, rep
             target_file_path: absolutePath,
             absolute_file_path: absolutePath,
             replacement_count: replacementCount,
-            replace_all_mode: replace_all,
             fileSnapshot: fileSnapshot,  // UI 히스토리에서 정확한 diff 표시를 위해 편집 전 스냅샷 포함
             file_stats: {
                 updated_content: newContent
@@ -695,7 +673,7 @@ export async function edit_file_range({ file_path, start_line, end_line, new_con
 // edit_file_replace 스키마
 export const editFileReplaceSchema = {
     "name": "edit_file_replace",
-    "description": "Performs exact string replacements in files (Claude Code style).\n\nUSAGE:\n- You must have read the file at least once before editing. This tool will error if you attempt an edit without reading the file.\n- When editing text from file reader output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. Never include any part of the line number prefix in the old_string or new_string.\n- The edit will FAIL if old_string is not unique in the file. Either provide a larger string with more surrounding context to make it unique or use replace_all to change every instance of old_string.\n- Use replace_all for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.\n\nCONTENT PURITY - CRITICAL: old_string and new_string must be EXACT file content. Include ONLY the actual code - NO explanatory text, NO markdown blocks, NO instructions.\n\nWRONG: \"Here's the code:\\nfunction foo() {}\" or \"```javascript\\ncode\\n```\"\nCORRECT: \"function foo() {\\n  return true;\\n}\"",
+    "description": "Performs exact string replacements in files (Claude Code style).\n\nUSAGE:\n- You must have read the file at least once before editing. This tool will error if you attempt an edit without reading the file.\n- When editing text from file reader output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. Never include any part of the line number prefix in the old_string or new_string.\n- The edit will FAIL if old_string is not unique in the file. Provide a larger string with more surrounding context to make it unique.\n\nCONTENT PURITY - CRITICAL: old_string and new_string must be EXACT file content. Include ONLY the actual code - NO explanatory text, NO markdown blocks, NO instructions.\n\nWRONG: \"Here's the code:\\nfunction foo() {}\" or \"```javascript\\ncode\\n```\"\nCORRECT: \"function foo() {\\n  return true;\\n}\"",
     "strict": false,
     "parameters": {
         "type": "object",
@@ -706,15 +684,11 @@ export const editFileReplaceSchema = {
             },
             "old_string": {
                 "type": "string",
-                "description": "The exact text to replace (must be unique in file unless replace_all is true). Must match file content exactly including all whitespace and indentation."
+                "description": "The exact text to replace (must be unique in file). Must match file content exactly including all whitespace and indentation."
             },
             "new_string": {
                 "type": "string",
                 "description": "The text to replace it with (must be different from old_string). PURE CODE ONLY - written directly to file."
-            },
-            "replace_all": {
-                "type": "boolean",
-                "description": "Replace all occurrences of old_string (default false). Use this for renaming variables across the file."
             }
         },
         "required": ["file_path", "old_string", "new_string"],
@@ -725,7 +699,7 @@ export const editFileReplaceSchema = {
         "show_tool_result": true,
         "display_name": "Replace",
         "format_tool_call": (args) => {
-            return `(${toDisplayPath(args.file_path)})${args.replace_all ? ' [all]' : ''}`;
+            return `(${toDisplayPath(args.file_path)})`;
         },
         "format_tool_result": (result) => {
             if (result.operation_successful) {
