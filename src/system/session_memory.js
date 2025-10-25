@@ -353,6 +353,24 @@ export function reconstructUIHistory(sessions) {
                                 timestamp: Date.now()
                             });
                         }
+                    } else if (toolName === 'run_python_code') {
+                        // run_python_code 실행도 code_execution 타입으로 변환
+                        uiHistory.push({
+                            type: 'code_execution',
+                            language: 'python',
+                            code: args.code || '',
+                            timestamp: Date.now()
+                        });
+
+                        if (result) {
+                            uiHistory.push({
+                                type: 'code_result',
+                                stdout: result.stdout || '',
+                                stderr: result.stderr || '',
+                                exitCode: result.exit_code || 0,
+                                timestamp: Date.now()
+                            });
+                        }
                     } else {
                         // tool_start 생성
                         const displayName = getToolDisplayName(toolName) || toolName;
