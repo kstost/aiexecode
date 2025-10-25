@@ -95,9 +95,13 @@ function CodeExecutionDisplay({ item, hasFollowingResult, nextItem }) {
     const resultStderr = item.result?.stderr || nextItem?.stderr;
     const isDenied = resultStderr?.includes('User denied code execution');
 
-    // code_execution 다음에 code_result가 오면 marginBottom 0, 아니면 1
-    // 단, denied된 경우 code_result가 렌더링되지 않으므로 항상 1
-    const marginBottom = (hasFollowingResult && !isDenied) ? 0 : 1;
+    /**
+     * 간격: marginBottom 항상 0
+     * 빈 줄은 BlankLine 컴포넌트로 관리됨
+     * - code_execution + code_result는 pair로 붙여서 표시 (빈 줄 없음)
+     * - code_result가 없으면 빈 줄로 구분
+     */
+    const marginBottom = 0;
 
     if (isDenied) {
         return React.createElement(Box, { flexDirection: "column", marginBottom, marginLeft: 2 },
@@ -137,7 +141,12 @@ function CodeResultDisplay({ item }) {
         return null;
     }
 
-    return React.createElement(Box, { marginBottom: 1, marginTop: 0, marginLeft: 4, flexGrow: 1 },
+    /**
+     * 간격: marginBottom 항상 0
+     * 빈 줄은 BlankLine 컴포넌트로 관리됨
+     * - code_result 뒤에는 항상 빈 줄 추가 (App.js에서 처리)
+     */
+    return React.createElement(Box, { marginBottom: 0, marginTop: 0, marginLeft: 4, flexGrow: 1 },
         React.createElement(Box, {
             flexDirection: "column",
             borderStyle: "round",
@@ -450,39 +459,49 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
         debugLog('========== edit_file_replace DIFF LOADING END ==========');
     }
 
-    // 간격 규칙:
-    // - tool_start 다음에 tool_result가 있고 렌더링되면 marginBottom: 0, 아니면 1
-    //   tool_result가 렌더링되지 않는 경우:
-    //     1. edit 도구가 성공한 경우 (tool_result가 null 반환)
-    //     2. denied된 도구 (tool_result가 null 반환)
-    // - tool_result는 항상 marginBottom: 1 (다음 요소와 빈 줄)
-    // - 나머지 요소는 marginBottom: 1
-    
-    // originalResult는 여러 곳에서 사용되므로 먼저 정의
-    const originalResult = item.result?.originalResult || nextItem?.result?.originalResult;
-    
-    let marginBottom;
-    
-    if (type === 'tool_result') {
-        // tool_result는 항상 다음 요소와 빈 줄
-        marginBottom = 1;
-    } else if (type === 'tool_start') {
-        // tool_start는 다음에 tool_result가 렌더링되면 빈 줄 없음
-        const isDenied = originalResult?.operation_successful === false && 
-                         originalResult?.error_message === 'User denied tool execution';
-        
-        const isEditTool = toolName === 'edit_file_range' || toolName === 'edit_file_replace';
-        // edit 도구가 성공한 경우만 tool_result를 숨김 (실패는 표시)
-        const isEditToolSuccess = isEditTool && originalResult?.operation_successful !== false;
-        const shouldHaveGap = isEditToolSuccess || isDenied;
-        
-        marginBottom = (hasFollowingResult && !shouldHaveGap) ? 0 : 1;
-    } else {
-        // 나머지 모든 요소는 다음 요소와 빈 줄
-        marginBottom = 1;
-    }
-    
+    /**
+     * 간격 규칙 설명
+     *
+     * ## 기본 원칙: marginBottom = 0
+     *
+     * 모든 히스토리 아이템은 marginBottom=0으로 렌더링됩니다.
+     * 빈 줄은 BlankLine 컴포넌트로 명시적으로 추가됩니다.
+     *
+     * ### 왜 이렇게 했는가?
+     *
+     * **기존 방식의 문제 (marginBottom으로 간격 제어)**:
+     * 1. Static 불변성 문제:
+     *    - user 입력이 추가될 때는 nextItem=null (아직 tool_start가 없음)
+     *    - user의 marginBottom이 1로 설정됨
+     *    - 나중에 tool_start가 추가되어도 이미 렌더링된 user는 업데이트 안됨
+     *    - 결과: user와 tool_start 사이에 불필요한 빈 줄 발생
+     *
+     * 2. 복잡한 조건부 로직:
+     *    - 각 요소가 "다음 요소가 무엇인지"를 보고 margin을 결정
+     *    - 코드 가독성이 떨어지고 버그가 발생하기 쉬움
+     *
+     * **새로운 방식 (BlankLine 컴포넌트)**:
+     * 1. 명시성: 빈 줄이 필요한 곳에 BlankLine 컴포넌트를 명시적으로 추가
+     * 2. 독립성: 각 히스토리 아이템은 독립적으로 렌더링 (margin=0)
+     * 3. 불변성 호환: Static의 불변 특성과 충돌하지 않음
+     *    - user + BlankLine이 함께 추가됨
+     *    - 나중에 tool_start가 추가되어도 영향 없음
+     * 4. 디버깅 용이: 로그에서 빈 줄 추가를 명시적으로 추적 가능
+     *
+     * ### 간격 규칙 (App.js의 shouldAddBlankLineAfter 함수 참조)
+     *
+     * - user, assistant, tool_result, code_result 뒤: 항상 빈 줄
+     * - tool_start 뒤: 다음이 tool_result가 아니면 빈 줄
+     * - code_execution 뒤: 다음이 code_result가 아니면 빈 줄
+     * - system, error 등 기타 뒤: 항상 빈 줄
+     *
+     * 상세한 규칙은 BlankLine.js와 App.js의 shouldAddBlankLineAfter 주석 참조
+     */
+    const marginBottom = 0;
     const marginTop = 0;
+
+    // originalResult는 여러 곳에서 사용되므로 정의 유지
+    const originalResult = item.result?.originalResult || nextItem?.result?.originalResult;
 
     if (false) {
         return React.createElement(Box, { flexDirection: "row", marginBottom, marginTop },
