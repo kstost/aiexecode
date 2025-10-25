@@ -361,7 +361,7 @@ export function TreeView({ data, onChange, className, expandedNodes: externalExp
           </div>
         </div>
       </div>
-      <div className="flex-1 min-h-0 overflow-auto p-2">
+      <div className="flex-1 min-h-0 overflow-auto p-2 pb-8">
         {tree.map((node) => renderNode(node))}
       </div>
     </div>

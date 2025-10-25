@@ -659,7 +659,7 @@ export function RequestEditor({ selectedFile, onFileUpdate }: RequestEditorProps
 
             {/* 액션 버튼들: 기능 실행 */}
             <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1 mr-2 px-2 py-1 border rounded-md bg-muted/30">
+              <div className="hidden flex items-center gap-1 mr-2 px-2 py-1 border rounded-md bg-muted/30">
                 <Button
                   size="sm"
                   variant={apiProvider === 'openai' ? 'default' : 'ghost'}

@@ -26,7 +26,7 @@ const program = new Command();
 program
     .name('aiexecode')
     .description('AI-powered autonomous coding agent that executes development tasks through natural language missions')
-    .version('1.0.45')
+    .version('1.0.46')
     .option('-c, --continue <session_id>', 'Continue from previous session (16-char hex session ID)')
     .option('--viewer', 'Start payload viewer web server')
     .option('-p, --port <port>', 'Port for payload viewer (default: 3300)', '3300')
@@ -438,7 +438,7 @@ uiInstance = startUI({
     onExit: handleExit,
     commands: commandList,
     model: currentModel,
-    version: '1.0.45',
+    version: '1.0.46',
     initialHistory,
     reasoningEffort: currentReasoningEffort
 });

@@ -267,18 +267,6 @@ function isAIAgentResponse(data: JsonValue): boolean {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return false
   const obj = data as Record<string, unknown>
 
-  console.log('Checking AI Agent Response:', {
-    hasDirectOutput: Array.isArray(obj.output),
-    hasDataField: !!obj.data,
-    dataType: typeof obj.data,
-    hasNestedOutput: !!(obj.data && typeof obj.data === 'object' && obj.data !== null &&
-                        Array.isArray((obj.data as Record<string, unknown>).output)),
-    topLevelKeys: Object.keys(obj),
-    dataKeys: obj.data && typeof obj.data === 'object' ? Object.keys(obj.data as Record<string, unknown>) : null,
-    outputSample: obj.data && typeof obj.data === 'object' && Array.isArray((obj.data as Record<string, unknown>).output)
-      ? ((obj.data as Record<string, unknown>).output as unknown[])?.slice(0, 2) : null
-  })
-
   // Check for direct output array (new format like the user provided)
   if (Array.isArray(obj.output)) return true
 
@@ -375,15 +363,44 @@ function AIAgentResponseViewer({ data }: { data: Record<string, unknown> }) {
                   <div className="w-2 h-2 bg-purple-500 rounded-full" />
                   <span className="text-sm font-medium text-purple-900 dark:text-purple-100">AI 추론 과정</span>
                 </div>
-                {output.summary && Array.isArray(output.summary) && output.summary.length > 0 ? (
-                  <div className="text-sm text-purple-800 dark:text-purple-200 leading-relaxed">
-                    {(output.summary as string[]).join(' ')}
-                  </div>
-                ) : (
-                  <div className="text-sm text-muted-foreground italic">
-                    🤔 AI가 문제를 분석하고 해결 방법을 찾았습니다
-                  </div>
-                )}
+                <div className="text-sm text-purple-800 dark:text-purple-200 leading-relaxed">
+                  {(() => {
+                    // summary 필드 확인
+                    if (output.summary) {
+                      if (Array.isArray(output.summary)) {
+                        return output.summary.map((item: unknown) => {
+                          if (typeof item === 'object' && item !== null) {
+                            const obj = item as Record<string, unknown>
+                            return obj.text || JSON.stringify(item)
+                          }
+                          return String(item)
+                        }).join(' ')
+                      } else if (typeof output.summary === 'object') {
+                        return JSON.stringify(output.summary, null, 2)
+                      } else {
+                        return String(output.summary)
+                      }
+                    }
+                    // content 필드 확인
+                    if (output.content) {
+                      if (Array.isArray(output.content)) {
+                        return output.content.map((item: unknown) =>
+                          typeof item === 'object' && item !== null ? (item as Record<string, unknown>).text || JSON.stringify(item) : String(item)
+                        ).join(' ')
+                      } else if (typeof output.content === 'object') {
+                        return JSON.stringify(output.content, null, 2)
+                      } else {
+                        return String(output.content)
+                      }
+                    }
+                    // text 필드 확인
+                    if (output.text) {
+                      return String(output.text)
+                    }
+                    // 전체 output 표시 (디버그)
+                    return JSON.stringify(output, null, 2)
+                  })()}
+                </div>
               </div>
             )}
 

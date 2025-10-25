@@ -4,11 +4,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
-import dotenv from 'dotenv';
 function consolelog() { }
-
-// Load environment variables (quiet mode to suppress output)
-dotenv.config({ silent: true });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
