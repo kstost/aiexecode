@@ -417,12 +417,6 @@ edit_file_replace({
   - Chain with &&: mkdir dir && cd dir && touch file
 - Prohibitions: Interactive commands, infinite output, system-wide searches
 
-**run_python_code**
-- Purpose: Execute Python code
-- Parameters: code (string)
-- Returns: stdout, stderr, exit code
-- Use for: Data processing, calculations, Python-specific tasks
-
 ### Communication
 
 **response_message**

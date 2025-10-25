@@ -57,7 +57,7 @@ const DEFAULT_SETTINGS = {
         read_file: true,
         read_file_range: true,
         bash: true,
-        run_python_code: true,
+        run_python_code: false,  // 기본적으로 비활성화
         fetch_web_page: true,
         response_message: true,
         ripgrep: true,
