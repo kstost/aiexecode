@@ -329,7 +329,8 @@ export async function ripgrep({
     '-C': context = 0,
     '-n': showLineNumbers = false,
     multiline = false,
-    head_limit: headLimit = null
+    head_limit: headLimit = null,
+    includeHidden = false
 }) {
 
     if (typeof pattern !== 'string' || !pattern.trim()) {
@@ -368,7 +369,7 @@ export async function ripgrep({
         '-n': showLineNumbers,
         multiline,
         maxCount,
-        includeHidden: false
+        includeHidden
     });
 
     const { stdout, stderr, code, timeout, sizeLimitExceeded } = await executeRipgrep(args, resolvedCwd);
@@ -513,6 +514,10 @@ export const ripgrepSchema = {
             head_limit: {
                 type: 'number',
                 description: 'Limit output to first N lines/entries, equivalent to "| head -N". Works across all output modes: content (limits output lines), files_with_matches (limits file paths), count (limits count entries). When unspecified, shows all results from ripgrep.',
+            },
+            includeHidden: {
+                type: 'boolean',
+                description: 'Include hidden files and directories in the search (rg --hidden). Default: false.',
             },
         },
         required: ['pattern'],
