@@ -141,7 +141,14 @@ if (initMode) {
         console.log(chalk.gray('These project-specific prompts will be used instead of the default ones.'));
 
     } catch (error) {
-        console.error(chalk.red('✗ Failed to initialize prompts:'), error.message);
+        console.log(chalk.red('\nStartup Failed: Prompt Initialization Error\n'));
+        console.log(chalk.yellow('Reason:'));
+        console.log(`  Failed to initialize project-specific prompts: ${error.message}`);
+        console.log(chalk.yellow('\nSolution:'));
+        console.log('  1. Check if you have write permissions in the current directory');
+        console.log('  2. Ensure the prompts directory exists in the project root');
+        console.log('  3. Verify disk space availability');
+        console.log(`  4. Try running with sudo if permission is denied\n`);
         process.exit(1);
     }
 
@@ -184,8 +191,14 @@ function generateSessionID() {
 if (shouldContinue) {
     // --continue 모드일 때는 옵션 값이 session_id
     if (typeof shouldContinue !== 'string' || shouldContinue.length !== 16 || !/^[0-9a-f]{16}$/.test(shouldContinue)) {
-        debugLog('Error: Invalid session_id. Must be 16-character hex string (0-9, a-f).');
-        debugLog(`Example: node index.js -c abc1234567890def "mission text"`);
+        console.log(chalk.red('\nStartup Failed: Invalid Session ID Format\n'));
+        console.log(chalk.yellow('Reason:'));
+        console.log('  The session ID must be a 16-character hexadecimal string (0-9, a-f).');
+        console.log(chalk.yellow('\nSolution:'));
+        console.log('  1. Check your session ID format - it should look like: abc1234567890def');
+        console.log('  2. Use the correct format with --continue option:');
+        console.log(chalk.cyan('     aiexecode --continue abc1234567890def "your mission"'));
+        console.log('  3. Or start a new session without --continue option\n');
         process.exit(1);
     }
     process.app_custom.sessionID = shouldContinue;
@@ -209,7 +222,14 @@ if (!configured) {
     const setupCompleted = await runSetupWizard();
 
     if (!setupCompleted) {
-        debugLog('Setup cancelled. Please run again to configure.');
+        console.log(chalk.red('\nStartup Failed: Setup Wizard Cancelled\n'));
+        console.log(chalk.yellow('Reason:'));
+        console.log('  Initial configuration was not completed.');
+        console.log(chalk.yellow('\nSolution:'));
+        console.log('  1. Run aiexecode again to restart the setup wizard');
+        console.log('  2. Complete all required configuration steps');
+        console.log('  3. Provide valid API keys and settings');
+        console.log(`  4. Or manually edit the settings file: ${SETTINGS_FILE}\n`);
         process.exit(1);
     }
 }
@@ -225,19 +245,25 @@ process.app_custom.systemInfo = await getSystemInfo({ skipPython });
 // 의존성 체크 (flutter doctor와 유사)
 const dependencyCheck = await checkDependencies({ skipPython });
 if (!dependencyCheck.success) {
-    debugLog('\n❌ Dependency Check Failed\n');
+    console.log(chalk.red('\nStartup Failed: Missing Required Dependencies\n'));
+    console.log(chalk.yellow('Reason:'));
+    console.log('  One or more required system dependencies are missing or incompatible.\n');
 
     dependencyCheck.issues.forEach(issue => {
         if (issue.type === 'unsupported_os') {
-            debugLog('  ✗ ' + issue.message);
-            debugLog('    ' + issue.details);
+            console.log(chalk.red('  [UNSUPPORTED] ') + issue.message);
+            console.log('    ' + issue.details);
         } else if (issue.type === 'missing_command') {
-            debugLog(`  ✗ ${issue.command}: ${issue.message}`);
-            debugLog(`    Install: ${issue.install}`);
+            console.log(chalk.red(`  [MISSING] ${issue.command}: `) + issue.message);
+            console.log(chalk.cyan(`    Install: ${issue.install}`));
         }
     });
 
-    debugLog('Please install the missing dependencies and try again.\n');
+    console.log(chalk.yellow('\nSolution:'));
+    console.log('  1. Install all missing dependencies listed above');
+    console.log('  2. Ensure all commands are accessible in your PATH');
+    console.log('  3. Restart your terminal after installation');
+    console.log('  4. Run aiexecode again\n');
     process.exit(1);
 }
 
@@ -267,9 +293,16 @@ if (!process.env.OPENAI_REASONING_EFFORT && settings?.OPENAI_REASONING_EFFORT) {
 
 // 최종 검증
 if (!process.env.OPENAI_API_KEY) {
-    debugLog(`OPENAI_API_KEY is not configured.`);
-    debugLog(`Please edit ${SETTINGS_FILE} and set OPENAI_API_KEY.`);
-    debugLog(`You can generate a key at https://platform.openai.com/account/api-keys`);
+    console.log(chalk.red('\nStartup Failed: Missing OpenAI API Key\n'));
+    console.log(chalk.yellow('Reason:'));
+    console.log('  OPENAI_API_KEY is not configured in the settings.');
+    console.log(chalk.yellow('\nSolution:'));
+    console.log('  1. Obtain an API key from OpenAI:');
+    console.log(chalk.cyan('     https://platform.openai.com/account/api-keys'));
+    console.log(`  2. Add the API key to your settings file:`);
+    console.log(chalk.cyan(`     ${SETTINGS_FILE}`));
+    console.log('  3. Or run the setup wizard again by deleting the settings file');
+    console.log('  4. Ensure the key is valid and has sufficient credits\n');
     process.exit(1);
 }
 
