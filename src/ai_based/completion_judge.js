@@ -19,7 +19,7 @@ export const completionJudgmentSchema = {
             },
             whatUserShouldSay: {
                 type: "string",
-                description: "The most appropriate thing the user should say next, as if you (the assistant) were the user observing the current situation. Put yourself in the user's shoes and determine what would be the most natural and helpful thing to say to guide the agent forward. MUST be a single, clear, decisive instruction without hedging words like 'maybe', 'perhaps', 'consider', 'you could', or offering multiple options. Pick the MOST important next step and state it with strong conviction. Empty string if mission is complete or if it's genuinely unclear what the user should say."
+                description: "The most appropriate thing the user should say next, as if you (the assistant) were the user observing the current situation. Put yourself in the user's shoes and determine what would be the most natural and helpful thing to say to guide the agent forward. CRITICAL: The statement must ONLY reference work that is explicitly part of the user's original request. NEVER suggest optional enhancements, additional features, improvements, or tasks beyond the user's explicit request. MUST be a single, clear, decisive instruction without hedging words like 'maybe', 'perhaps', 'consider', 'you could', or offering multiple options. Pick the MOST important next step from the user's explicit requirements and state it with strong conviction. Empty string if mission is complete or if it's genuinely unclear what the user should say."
             }
         },
         required: ["should_complete", "whatUserShouldSay"],

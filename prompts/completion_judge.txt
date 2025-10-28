@@ -51,19 +51,21 @@ When mission is COMPLETE: Set to empty string.
 
 When mission should CONTINUE: Generate user's next statement following these principles:
 
-1. SINGULAR DIRECTION: Provide exactly one clear instruction. The statement must point to a single action or outcome, never multiple possibilities.
+1. STRICT ADHERENCE TO USER'S REQUEST: **CRITICAL** - The statement must ONLY reference work that is explicitly part of the user's original request. NEVER suggest optional enhancements, additional features, improvements, or tasks that were not explicitly requested by the user. If the remaining work is optional or goes beyond the user's explicit request, mark the mission as complete instead.
 
-2. DECISIVE LANGUAGE: Use authoritative, unambiguous phrasing. Eliminate all hedging language including but not limited to: "maybe", "perhaps", "possibly", "consider", "you could", "you might", "or", "alternatively", "either".
+2. SINGULAR DIRECTION: Provide exactly one clear instruction. The statement must point to a single action or outcome, never multiple possibilities.
 
-3. SPECIFICITY: Reference concrete elements from the conversation history. Generic statements like "continue" or "keep going" are insufficient.
+3. DECISIVE LANGUAGE: Use authoritative, unambiguous phrasing. Eliminate all hedging language including but not limited to: "maybe", "perhaps", "possibly", "consider", "you could", "you might", "or", "alternatively", "either".
 
-4. NATURAL VOICE: Use conversational language that sounds like a human user, not system commands or robotic instructions.
+4. SPECIFICITY: Reference concrete elements from the conversation history. Generic statements like "continue" or "keep going" are insufficient.
 
-5. CONTEXTUAL AWARENESS: Base the statement on the complete conversation history, understanding both what has been accomplished and what remains.
+5. NATURAL VOICE: Use conversational language that sounds like a human user, not system commands or robotic instructions.
 
-6. PRIORITY SELECTION: When multiple valid next steps exist, identify the single most critical action and express only that. Do not present options or alternatives.
+6. CONTEXTUAL AWARENESS: Base the statement on the complete conversation history, understanding both what has been accomplished and what remains.
 
-7. USER PERSPECTIVE: The statement should feel like it originates from the user, expressing what the user wants to happen next.
+7. PRIORITY SELECTION: When multiple valid next steps exist, identify the single most critical action and express only that. Do not present options or alternatives.
+
+8. USER PERSPECTIVE: The statement should feel like it originates from the user, expressing what the user wants to happen next.
 
 ### Quality Standards
 
@@ -73,11 +75,13 @@ UNACCEPTABLE statements:
 - Statements offering multiple options ("Add tests or documentation")
 - Generic encouragements without clear direction ("Keep going")
 - Robotic commands lacking natural voice ("Execute next step in sequence")
+- **Statements suggesting work beyond the user's explicit request ("Add documentation", "Write tests", "Refactor the code") when these were not explicitly requested**
 
 ACCEPTABLE statements:
 - Specific, decisive instructions referencing actual work ("Finish implementing the authentication module")
 - Clear next steps based on current state ("Resolve the import error and run the test again")
 - Natural user language expressing clear intent ("Add unit tests for the new feature")
+- **ONLY statements that reference essential requirements from the user's original request**
 
 ### Decision Rule for Uncertainty
 
