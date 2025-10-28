@@ -1,0 +1,14 @@
+~/.aiexe/payload_log 폴더의 로그를 편리하게 조회하고 평가하는 도구
+
+## 프론트엔드 빌드하고 서버 실행
+```
+chmod +x ./start.sh && ./start.sh
+```
+
+## 프론트엔드 빌드
+```
+npm install && npm run build
+```
+
+## 서버 실행
+npm install && node web_server.js

@@ -1,0 +1,50 @@
+# Development files
+.aiexe/
+.claude/
+.vscode/
+.git/
+.gitignore
+test_viewer.*
+
+# Documentation (keep README.md)
+CLAUDE.md
+
+# Build artifacts
+*.log
+debug.log
+difference.txt
+
+# Temporary files
+temp/
+rag_database/
+
+# MCP agent lib development files
+mcp-agent-lib/.commit_message.txt
+
+# Development dependencies
+sdks/
+
+# Payload viewer source (keep built version)
+payload_viewer/app/
+payload_viewer/components/
+payload_viewer/lib/
+payload_viewer/types/
+payload_viewer/public/
+payload_viewer/.next/
+payload_viewer/node_modules/
+payload_viewer/.env.example
+payload_viewer/.env.local
+payload_viewer/.gitignore
+payload_viewer/eslint.config.mjs
+payload_viewer/next-env.d.ts
+payload_viewer/next.config.ts
+payload_viewer/postcss.config.mjs
+payload_viewer/tsconfig.json
+payload_viewer/package-lock.json
+payload_viewer/manual.txt
+payload_viewer/start.sh
+
+# Keep only essential payload_viewer files
+!payload_viewer/package.json
+!payload_viewer/web_server.js
+!payload_viewer/out/
