@@ -1,6 +1,6 @@
 {
   "name": "aiexecode",
-  "version": "1.0.67",
+  "version": "1.0.68",
   "description": "A CLI-based AI Coding Agent",
   "main": "index.js",
   "type": "module",
