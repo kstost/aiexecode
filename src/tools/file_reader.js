@@ -230,6 +230,11 @@ export async function read_file_range({ filePath, startLine, endLine }) {
             line_content: line
         }));
 
+        // file_content에 라인 번호 추가
+        const contentWithLineNumbers = selectedLines
+            .map((line, index) => `${startLine + index}| ${line}`)
+            .join('\n');
+
         debugLog('========== read_file_range SUCCESS END ==========');
 
         return {
@@ -241,8 +246,7 @@ export async function read_file_range({ filePath, startLine, endLine }) {
                 start_line: startLine,
                 end_line: Math.min(endLine, totalLines)
             },
-            file_lines: numberedLines,
-            file_content: selectedLines.join('\n')
+            file_content: contentWithLineNumbers
         };
     } catch (error) {
         debugLog(`========== read_file_range EXCEPTION ==========`);
