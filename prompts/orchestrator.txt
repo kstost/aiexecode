@@ -298,13 +298,45 @@ edit_file_replace({
 
 **ripgrep**
 - Purpose: Search file contents with regex patterns
+- Parameters:
+  - pattern (required): Regular expression pattern to search for
+  - path: Directory or file to search in (defaults to CWD)
+  - glob: Filter files by pattern (e.g., "*.js", "**/*.{ts,tsx}")
+  - type: Filter by file type (js, py, rust, go, java, etc.)
+  - output_mode: "files_with_matches" (default), "content", or "count"
+  - head_limit: Limit results to first N entries (works across all modes)
+  - '-i': Case insensitive search (boolean)
+  - '-n': Show line numbers in content mode (boolean)
+  - '-A': Lines of context after match (content mode only)
+  - '-B': Lines of context before match (content mode only)
+  - '-C': Lines of context before and after match (content mode only)
+  - multiline: Enable multiline pattern matching (boolean)
 - Output modes:
-  - files_with_matches: File paths only (default, fastest)
-  - content: Matching lines with optional context
-  - count: Match counts per file
-- Features: Context lines, case insensitive, multiline mode
-- Auto-excludes: Same as glob_search
-- Use for: Finding code by content
+  - files_with_matches: File paths only (fastest, recommended for initial exploration)
+  - content: Matching lines with optional context and line numbers
+  - count: Number of matches per file
+- Auto-excludes: node_modules, .git, dist, build, venv, .next, .aiexe
+- Built-in protections:
+  - 30KB output size limit (automatically terminates search if exceeded)
+  - 2-minute timeout for safety
+  - Dynamic maxCount: content mode limited to 100 matches/file, others to 500
+  - head_limit automatically adjusts search efficiency
+- **Strategic Usage:**
+  - **Phase 1 - Locate**: Start with files_with_matches to find relevant files quickly
+    - Example: `ripgrep({ pattern: "authenticate", output_mode: "files_with_matches" })`
+  - **Phase 2 - Examine**: Use content mode with head_limit for detailed inspection
+    - Example: `ripgrep({ pattern: "authenticate", output_mode: "content", "-n": true, "-C": 2, head_limit: 20 })`
+  - **Phase 3 - Analyze**: Use count mode to understand distribution
+    - Example: `ripgrep({ pattern: "TODO", output_mode: "count" })`
+  - **Combine filters** to narrow scope: Use type/glob together
+    - Example: `ripgrep({ pattern: "import.*React", type: "js", glob: "src/**/*.jsx" })`
+- **Best Practices:**
+  - Use specific patterns to avoid overwhelming results (avoid ".", ".*", etc.)
+  - Start with files_with_matches, then drill down with content mode
+  - Apply head_limit when exploring (e.g., 10-50) to see patterns quickly
+  - Use -n flag in content mode for line number references
+  - Warning messages indicate output truncation - refine search if this occurs
+- Use for: Finding code by content, exploring codebases, locating specific implementations
 
 ### Code Execution
 
@@ -425,7 +457,7 @@ General principles to follow:
 ```
 glob_search({ pattern: "**/*.js" }) - Get file structure
 read_file({ filePath: "package.json" }) - Understand project
-ripgrep({ pattern: "import.*from", outputMode: "files_with_matches" }) - Find dependencies
+ripgrep({ pattern: "import.*from", output_mode: "files_with_matches" }) - Find dependencies
 read_file({ filePath: "entry/point.js" }) - Read key files
 ... continue exploring as needed
 ```
@@ -442,11 +474,22 @@ bash({ script: "npm test" }) - Verify changes
 ... fix any issues found, continue until verified
 ```
 
-**Finding specific code:**
+**Finding specific code (3-phase approach):**
 ```
-ripgrep({ pattern: "functionName", outputMode: "files_with_matches" }) - Locate files
-ripgrep({ pattern: "functionName", outputMode: "content" }) - Get exact lines
-read_file({ filePath: "found/file.js" }) - Read full context
+// Phase 1: Locate files quickly
+ripgrep({ pattern: "functionName", output_mode: "files_with_matches" })
+
+// Phase 2: Examine matches with context
+ripgrep({
+  pattern: "functionName",
+  output_mode: "content",
+  "-n": true,
+  "-C": 3,
+  head_limit: 20
+})
+
+// Phase 3: Read full file for complete context
+read_file({ filePath: "found/file.js" })
 ... continue analysis as needed
 ```
 
@@ -490,7 +533,7 @@ When tools are independent, call them simultaneously:
 // Call multiple search tools at once
 glob_search({ pattern: "**/*auth*.js" })
 glob_search({ pattern: "**/*login*.js" })
-ripgrep({ pattern: "authenticate|login", type: "js" })
+ripgrep({ pattern: "authenticate|login", type: "js", output_mode: "files_with_matches" })
 ```
 
 ```javascript
@@ -781,9 +824,15 @@ Keep it simple, forward-looking, and action-focused.
 ### Efficient Searches
 
 - Use glob_search for file names (very fast)
-- Use ripgrep with outputMode: "files_with_matches" first
-- Narrow down with outputMode: "content" only when needed
-- Apply filters: glob, type, headLimit
+- **ripgrep 3-phase strategy:**
+  1. Start with output_mode: "files_with_matches" to locate relevant files
+  2. Use output_mode: "content" with head_limit (10-50) for quick inspection
+  3. Use read_file for complete context on specific files
+- Apply filters early: glob, type parameters narrow scope before searching
+- Use head_limit to explore patterns without overwhelming output
+- Combine filters: type + glob together for precision
+  - Example: `ripgrep({ pattern: "useState", type: "js", glob: "src/**/*.jsx", head_limit: 20 })`
+- Watch for warning_message in results - indicates output truncation, refine search if needed
 
 ### Batch Operations
 

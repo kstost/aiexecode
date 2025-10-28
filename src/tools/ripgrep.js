@@ -5,6 +5,7 @@ import { theme } from '../frontend/design/themeColors.js';
 
 const DEFAULT_TIMEOUT_MS = 120000;
 const DEFAULT_MAX_COUNT = 500;
+const MAX_OUTPUT_SIZE = 30000; // 30KB 출력 크기 제한
 
 /**
  * ripgrep 인수를 구성합니다
@@ -14,11 +15,12 @@ function buildRipgrepArgs({
     path = null,
     glob = null,
     type = null,
-    caseInsensitive = false,
-    outputMode = 'files_with_matches',
-    contextBefore = 0,
-    contextAfter = 0,
-    context = 0,
+    '-i': caseInsensitive = false,
+    output_mode: outputMode = 'files_with_matches',
+    '-B': contextBefore = 0,
+    '-A': contextAfter = 0,
+    '-C': context = 0,
+    '-n': showLineNumbers = false,
     multiline = false,
     maxCount = DEFAULT_MAX_COUNT,
     includeHidden = false
@@ -59,7 +61,7 @@ function buildRipgrepArgs({
         }
     }
 
-    // 최대 매치 수
+    // 최대 매치 수 (파일당)
     args.push('--max-count', String(maxCount));
 
     // 숨김 파일 포함
@@ -111,6 +113,8 @@ function executeRipgrep(args, cwd, timeoutMs = DEFAULT_TIMEOUT_MS) {
         let stdout = '';
         let stderr = '';
         let isTimedOut = false;
+        let isSizeLimitExceeded = false;
+        let outputSize = 0;
         let timeoutId;
         let settled = false;
         let rg;
@@ -164,7 +168,37 @@ function executeRipgrep(args, cwd, timeoutMs = DEFAULT_TIMEOUT_MS) {
         }, timeoutMs);
 
         rg.stdout.on('data', (data) => {
-            stdout += data.toString();
+            const dataStr = data.toString();
+            outputSize += dataStr.length;
+
+            // 출력 크기 제한 체크
+            if (outputSize > MAX_OUTPUT_SIZE && !isSizeLimitExceeded) {
+                isSizeLimitExceeded = true;
+                stdout += dataStr;
+                stdout += '\n[OUTPUT TRUNCATED: exceeded 30KB limit]';
+
+                // 프로세스 종료
+                try {
+                    process.kill(-rg.pid, 'SIGTERM');
+                    setTimeout(() => {
+                        try {
+                            process.kill(-rg.pid, 'SIGKILL');
+                        } catch (_) {}
+                    }, 1000);
+                } catch (_) {
+                    rg.kill('SIGTERM');
+                    setTimeout(() => {
+                        try {
+                            rg.kill('SIGKILL');
+                        } catch (_) {}
+                    }, 1000);
+                }
+                return;
+            }
+
+            if (!isSizeLimitExceeded) {
+                stdout += dataStr;
+            }
         });
 
         rg.stderr.on('data', (data) => {
@@ -181,6 +215,15 @@ function executeRipgrep(args, cwd, timeoutMs = DEFAULT_TIMEOUT_MS) {
                     stderr: `${trimmedStderr}\n[TIMEOUT] ripgrep terminated due to timeout`.trim(),
                     code: 1,
                     timeout: true,
+                    sizeLimitExceeded: isSizeLimitExceeded,
+                });
+            } else if (isSizeLimitExceeded) {
+                settle({
+                    stdout: trimmedStdout,
+                    stderr: trimmedStderr,
+                    code: 0, // 정상 종료로 처리
+                    timeout: false,
+                    sizeLimitExceeded: true,
                 });
             } else {
                 settle({
@@ -188,6 +231,7 @@ function executeRipgrep(args, cwd, timeoutMs = DEFAULT_TIMEOUT_MS) {
                     stderr: trimmedStderr,
                     code,
                     timeout: false,
+                    sizeLimitExceeded: false,
                 });
             }
         });
@@ -198,6 +242,7 @@ function executeRipgrep(args, cwd, timeoutMs = DEFAULT_TIMEOUT_MS) {
                 stderr: isTimedOut ? `[TIMEOUT] ${err.message}` : err.message,
                 code: 1,
                 timeout: isTimedOut,
+                sizeLimitExceeded: isSizeLimitExceeded,
             });
         });
     });
@@ -206,7 +251,7 @@ function executeRipgrep(args, cwd, timeoutMs = DEFAULT_TIMEOUT_MS) {
 /**
  * JSON 라인 출력을 파싱하여 파일별로 그룹화합니다
  */
-function parseJsonOutput(buffer) {
+function parseJsonOutput(buffer, showLineNumbers = false) {
     const lines = buffer.split('\n').filter(Boolean);
     const fileResults = {};
 
@@ -221,13 +266,19 @@ function parseJsonOutput(buffer) {
 
                 const filePath = data.path.text;
                 const lineContent = data.lines.text;
+                const lineNumber = data.line_number;
 
                 // 파일별로 그룹화
                 if (!fileResults[filePath]) {
                     fileResults[filePath] = [];
                 }
 
-                fileResults[filePath].push(lineContent);
+                // 라인 번호 표시 옵션
+                if (showLineNumbers && lineNumber !== undefined) {
+                    fileResults[filePath].push(`${lineNumber}:${lineContent}`);
+                } else {
+                    fileResults[filePath].push(lineContent);
+                }
             }
         } catch (_) {
             // JSON 파싱 실패 시 무시
@@ -271,15 +322,14 @@ export async function ripgrep({
     path = null,
     glob = null,
     type = null,
-    caseInsensitive = false,
-    outputMode = 'files_with_matches',
-    contextBefore = 0,
-    contextAfter = 0,
-    context = 0,
+    '-i': caseInsensitive = false,
+    output_mode: outputMode = 'files_with_matches',
+    '-B': contextBefore = 0,
+    '-A': contextAfter = 0,
+    '-C': context = 0,
+    '-n': showLineNumbers = false,
     multiline = false,
-    maxCount = DEFAULT_MAX_COUNT,
-    includeHidden = false,
-    headLimit = null
+    head_limit: headLimit = null
 }) {
 
     if (typeof pattern !== 'string' || !pattern.trim()) {
@@ -296,22 +346,32 @@ export async function ripgrep({
     // ripgrep에 전달할 검색 경로 (상대 경로 그대로 전달)
     const searchPath = path;
 
+    // maxCount 결정 (output_mode와 head_limit 기반)
+    let maxCount = DEFAULT_MAX_COUNT;
+    if (outputMode === 'content') {
+        maxCount = 100; // content 모드는 기본 100
+    }
+    if (headLimit && headLimit > 0 && headLimit < maxCount) {
+        maxCount = headLimit; // head_limit이 더 작으면 사용
+    }
+
     const args = buildRipgrepArgs({
         pattern: pattern.trim(),
         path: searchPath,
         glob,
         type,
-        caseInsensitive,
-        outputMode,
-        contextBefore,
-        contextAfter,
-        context,
+        '-i': caseInsensitive,
+        output_mode: outputMode,
+        '-B': contextBefore,
+        '-A': contextAfter,
+        '-C': context,
+        '-n': showLineNumbers,
         multiline,
         maxCount,
-        includeHidden
+        includeHidden: false
     });
 
-    const { stdout, stderr, code, timeout } = await executeRipgrep(args, resolvedCwd);
+    const { stdout, stderr, code, timeout, sizeLimitExceeded } = await executeRipgrep(args, resolvedCwd);
 
     let results = [];
     let totalMatches = 0;
@@ -324,14 +384,37 @@ export async function ripgrep({
         results = parseCountOutput(stdout);
         totalMatches = Object.values(results).reduce((sum, count) => sum + count, 0);
     } else {
-        results = parseJsonOutput(stdout);
+        results = parseJsonOutput(stdout, showLineNumbers);
         // 파일별 그룹화된 결과에서 총 매치 수 계산
         totalMatches = Object.values(results).reduce((sum, matches) => sum + matches.length, 0);
     }
 
-    // headLimit 적용 (files_with_matches 모드에서만 적용)
-    if (headLimit && headLimit > 0 && outputMode === 'files_with_matches') {
-        results = results.slice(0, headLimit);
+    // headLimit 적용 (모든 출력 모드)
+    if (headLimit && headLimit > 0) {
+        if (outputMode === 'files_with_matches') {
+            // 파일 목록 제한
+            results = results.slice(0, headLimit);
+        } else if (outputMode === 'count') {
+            // count 모드: 상위 N개 파일만
+            const entries = Object.entries(results).slice(0, headLimit);
+            results = Object.fromEntries(entries);
+        } else if (outputMode === 'content') {
+            // content 모드: 전체 매칭 라인을 headLimit까지만
+            const limitedResults = {};
+            let lineCount = 0;
+
+            for (const [file, matches] of Object.entries(results)) {
+                if (lineCount >= headLimit) break;
+
+                limitedResults[file] = [];
+                for (const match of matches) {
+                    if (lineCount >= headLimit) break;
+                    limitedResults[file].push(match);
+                    lineCount++;
+                }
+            }
+            results = limitedResults;
+        }
     }
 
     const noResult = !timeout && code === 1 && (
@@ -342,8 +425,12 @@ export async function ripgrep({
     const success = !timeout && (code === 0 || noResult);
 
     let errorMessage = '';
+    let warningMessage = '';
+
     if (timeout) {
         errorMessage = '검색 명령이 제한 시간을 초과했습니다.';
+    } else if (sizeLimitExceeded) {
+        warningMessage = '출력 크기가 30KB를 초과하여 결과가 잘렸습니다. 더 구체적인 검색어나 필터를 사용하세요.';
     } else if (!success) {
         errorMessage = stderr || 'ripgrep 실행 중 오류가 발생했습니다.';
     } else if (noResult) {
@@ -358,6 +445,11 @@ export async function ripgrep({
         pattern_used: pattern.trim(),
     };
 
+    // 경고 메시지 추가
+    if (warningMessage) {
+        response.warning_message = warningMessage;
+    }
+
     // 에러가 있을 경우에만 raw_stderr 포함
     if (stderr) {
         response.raw_stderr = stderr;
@@ -368,63 +460,59 @@ export async function ripgrep({
 
 export const ripgrepSchema = {
     name: 'ripgrep',
-    description: 'ripgrep을 사용하여 프로젝트 전역에서 파일 내용을 검색합니다. 정규식 패턴, 파일 타입 필터링, 다양한 출력 모드를 지원합니다.',
+    description: 'A powerful search tool built on ripgrep. Supports full regex syntax, file filtering with glob/type parameters, and multiple output modes.',
     strict: false,
     parameters: {
         type: 'object',
         properties: {
             pattern: {
                 type: 'string',
-                description: '검색할 정규식 패턴',
+                description: 'The regular expression pattern to search for in file contents',
             },
             path: {
                 type: 'string',
-                description: '검색할 경로 (선택 사항, 생략 시 프로젝트 루트)',
+                description: 'File or directory to search in (rg PATH). Defaults to current working directory.',
             },
             glob: {
                 type: 'string',
-                description: 'Glob 패턴으로 파일 필터링 (선택 사항, 예: "*.js", "**/*.tsx")',
+                description: 'Glob pattern to filter files (e.g. "*.js", "*.{ts,tsx}") - maps to rg --glob',
             },
             type: {
                 type: 'string',
-                description: '파일 타입 필터 (선택 사항, js, py, rust, go, java 등)',
+                description: 'File type to search (rg --type). Common types: js, py, rust, go, java, etc. More efficient than include for standard file types.',
             },
-            caseInsensitive: {
+            '-i': {
                 type: 'boolean',
-                description: '대소문자를 구분하지 않고 검색 (선택 사항, 기본값: false)',
+                description: 'Case insensitive search (rg -i)',
             },
-            outputMode: {
+            output_mode: {
                 type: 'string',
                 enum: ['content', 'files_with_matches', 'count'],
-                description: '출력 모드 (선택 사항, 기본값: files_with_matches): content(매칭된 라인), files_with_matches(파일 경로만), count(매칭 횟수)',
+                description: 'Output mode: "content" shows matching lines (supports -A/-B/-C context, -n line numbers, head_limit), "files_with_matches" shows file paths (supports head_limit), "count" shows match counts (supports head_limit). Defaults to "files_with_matches".',
             },
-            contextBefore: {
+            '-B': {
                 type: 'number',
-                description: '매칭 전 N줄 표시 (선택 사항, content 모드에서만)',
+                description: 'Number of lines to show before each match (rg -B). Requires output_mode: "content", ignored otherwise.',
             },
-            contextAfter: {
+            '-A': {
                 type: 'number',
-                description: '매칭 후 N줄 표시 (선택 사항, content 모드에서만)',
+                description: 'Number of lines to show after each match (rg -A). Requires output_mode: "content", ignored otherwise.',
             },
-            context: {
+            '-C': {
                 type: 'number',
-                description: '매칭 전후 N줄 표시 (선택 사항, content 모드에서만)',
+                description: 'Number of lines to show before and after each match (rg -C). Requires output_mode: "content", ignored otherwise.',
+            },
+            '-n': {
+                type: 'boolean',
+                description: 'Show line numbers in output (rg -n). Requires output_mode: "content", ignored otherwise.',
             },
             multiline: {
                 type: 'boolean',
-                description: '멀티라인 검색 활성화 (선택 사항, 여러 줄에 걸친 패턴 매칭)',
+                description: 'Enable multiline mode where . matches newlines and patterns can span lines (rg -U --multiline-dotall). Default: false.',
             },
-            maxCount: {
+            head_limit: {
                 type: 'number',
-                description: '파일당 최대 매칭 수 (선택 사항, 기본값: 500)',
-            },
-            includeHidden: {
-                type: 'boolean',
-                description: '숨김 파일 포함 여부 (선택 사항, 기본값: false)',
-            },
-            headLimit: {
-                type: 'number',
-                description: '출력 결과 수 제한 (선택 사항, 첫 N개만 반환)',
+                description: 'Limit output to first N lines/entries, equivalent to "| head -N". Works across all output modes: content (limits output lines), files_with_matches (limits file paths), count (limits count entries). When unspecified, shows all results from ripgrep.',
             },
         },
         required: ['pattern'],
