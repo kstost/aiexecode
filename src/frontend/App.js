@@ -391,8 +391,12 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
         if (!text.trim().startsWith('/')) {
             const userEvent = { type: 'user', text };
 
-            // Clear todos when starting a new mission
-            setTodos([]);
+            // Clear todos only if all are completed
+            setTodos(prev => {
+                if (prev.length === 0) return [];
+                const allCompleted = prev.every(todo => todo.status === 'completed');
+                return allCompleted ? [] : prev;
+            });
 
             // history에 추가
             setHistory(prev => [...prev, userEvent]);

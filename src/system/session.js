@@ -11,7 +11,7 @@ import { RESPONSE_MESSAGE_FUNCTIONS } from '../tools/response_message.js';
 import { TODO_WRITE_FUNCTIONS } from '../tools/todo_write.js';
 import { clampOutput, formatToolStdout } from "../util/output_formatter.js";
 import { buildToolHistoryEntry } from "../util/rag_helper.js";
-import { createSessionData, getLastConversationState, loadPreviousSessions, saveSessionToHistory, saveTodosToSession, restoreTodosFromSession, updateCurrentTodos } from "./session_memory.js";
+import { createSessionData, getLastConversationState, loadPreviousSessions, saveSessionToHistory, saveTodosToSession, restoreTodosFromSession, updateCurrentTodos, getCurrentTodos } from "./session_memory.js";
 import { uiEvents } from "./ui_events.js";
 import { logSystem, logError, logAssistantMessage, logToolCall, logToolResult, logCodeExecution, logCodeResult, logIteration, logMissionComplete, logConversationRestored } from "./output_helper.js";
 import { requiresApproval, requestApproval } from "./tool_approval.js";
@@ -607,19 +607,32 @@ async function processOrchestratorResponses(params) {
                 break;
             }
 
-            // LLM을 통해 실제 완료 여부 판단
+            // Todo list 확인 - pending 상태의 todo가 있으면 자동으로 계속 진행
+            const currentTodos = getCurrentTodos();
+            const hasPendingTodos = currentTodos.some(todo => todo.status === 'pending');
+
             let judgement;
-            try {
-                judgement = await judgeMissionCompletion({
-                    what_user_requests: mission
-                });
-                completionJudgeExecuted = true; // completion_judge 실행 완료
-            } catch (err) {
-                if (err.name === 'AbortError' || sessionInterrupted) {
-                    debugLog(`judgeMissionCompletion aborted or interrupted: ${err.name}`);
-                    break;
+
+            if (currentTodos.length > 0 && hasPendingTodos) {
+                debugLog(`Found ${currentTodos.length} todos with ${currentTodos.filter(t => t.status === 'pending').length} pending items - skipping completion_judge`);
+                judgement = {
+                    shouldComplete: false,
+                    whatUserShouldSay: "continue"
+                };
+            } else {
+                // LLM을 통해 실제 완료 여부 판단
+                try {
+                    judgement = await judgeMissionCompletion({
+                        what_user_requests: mission
+                    });
+                    completionJudgeExecuted = true; // completion_judge 실행 완료
+                } catch (err) {
+                    if (err.name === 'AbortError' || sessionInterrupted) {
+                        debugLog(`judgeMissionCompletion aborted or interrupted: ${err.name}`);
+                        break;
+                    }
+                    throw err;
                 }
-                throw err;
             }
 
             // 세션 중단 확인 (completion_judge 호출 후)
@@ -855,9 +868,24 @@ export async function runSession(options) {
         } else {
             // logSystem('ℹ Starting with fresh conversation state');
             resetOrchestratorConversation();
-            // Clear todos for fresh session
-            updateCurrentTodos([]);
-            debugLog(`[runSession] Starting fresh session - todos cleared`);
+
+            // 현재 메모리의 todos 확인 (화면에 표시된 todos)
+            const currentTodos = getCurrentTodos();
+            if (currentTodos && currentTodos.length > 0) {
+                const allCompleted = currentTodos.every(todo => todo.status === 'completed');
+                if (allCompleted) {
+                    // 모두 완료되었으면 클리어
+                    updateCurrentTodos([]);
+                    debugLog(`[runSession] Starting fresh session - all ${currentTodos.length} todos completed, cleared`);
+                } else {
+                    // 완료되지 않은 todos가 있으면 유지 (아무 작업도 하지 않음)
+                    debugLog(`[runSession] Starting fresh conversation but keeping ${currentTodos.length} incomplete todos`);
+                }
+            } else {
+                // Todos가 없으면 명시적으로 클리어
+                updateCurrentTodos([]);
+                debugLog(`[runSession] Starting fresh session - no todos in memory`);
+            }
         }
 
         // Python 사용 가능 여부 확인

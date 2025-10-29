@@ -23,11 +23,11 @@ const getStatusIcon = (status) => {
 const getStatusColor = (status) => {
     switch (status) {
         case 'completed':
-            return theme.brand.dark;
+            return theme.brand.light;
         case 'in_progress':
             return theme.brand.light;
         case 'pending':
-            return theme.brand.light;
+            return theme.brand.dark;
         default:
             return theme.text.primary;
     }
@@ -44,7 +44,10 @@ export function TodoList({ todos }) {
         ),
         ...todos.map((todo, index) =>
             React.createElement(Box, { key: index, marginLeft: 2 },
-                React.createElement(Text, { color: getStatusColor(todo.status) },
+                React.createElement(Text, {
+                    color: getStatusColor(todo.status),
+                    strikethrough: todo.status === 'completed'
+                },
                     `${getStatusIcon(todo.status)} ${todo.status === 'in_progress' ? todo.activeForm : todo.content}`
                 )
             )
