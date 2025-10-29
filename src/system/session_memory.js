@@ -129,7 +129,9 @@ export function createSessionData(sessionID, mission) {
         toolUsageHistory: [],
         // 대화 상태 저장
         orchestratorConversation: [],
-        orchestratorRequestOptions: null
+        orchestratorRequestOptions: null,
+        // Todo 리스트 저장
+        currentTodos: []
     };
 }
 
@@ -147,7 +149,8 @@ export function getLastConversationState(sessions) {
 
     return {
         orchestratorConversation: lastSession.orchestratorConversation || [],
-        orchestratorRequestOptions: lastSession.orchestratorRequestOptions || null
+        orchestratorRequestOptions: lastSession.orchestratorRequestOptions || null,
+        currentTodos: lastSession.currentTodos || []
     };
 }
 
@@ -398,4 +401,52 @@ export function reconstructUIHistory(sessions) {
     });
 
     return uiHistory;
+}
+
+/**
+ * 현재 세션의 todos를 메모리에 저장하기 위한 전역 변수
+ */
+let currentSessionTodos = [];
+
+/**
+ * 현재 세션의 todos를 업데이트
+ * @param {Array} todos - Todo 항목 배열
+ */
+export function updateCurrentTodos(todos) {
+    debugLog('========== updateCurrentTodos ==========');
+    debugLog(`Updating todos: ${todos.length} items`);
+    currentSessionTodos = todos;
+}
+
+/**
+ * 현재 세션의 todos를 가져옴
+ * @returns {Array} Todo 항목 배열
+ */
+export function getCurrentTodos() {
+    return currentSessionTodos;
+}
+
+/**
+ * 세션 데이터에 현재 todos를 저장
+ * @param {Object} sessionData - 세션 데이터 객체
+ */
+export function saveTodosToSession(sessionData) {
+    debugLog('========== saveTodosToSession ==========');
+    debugLog(`Saving ${currentSessionTodos.length} todos to session`);
+    sessionData.currentTodos = [...currentSessionTodos];
+}
+
+/**
+ * 세션 데이터에서 todos를 복원
+ * @param {Object} sessionData - 세션 데이터 객체
+ */
+export function restoreTodosFromSession(sessionData) {
+    debugLog('========== restoreTodosFromSession ==========');
+    if (sessionData && sessionData.currentTodos) {
+        debugLog(`Restoring ${sessionData.currentTodos.length} todos from session`);
+        currentSessionTodos = [...sessionData.currentTodos];
+    } else {
+        debugLog('No todos to restore');
+        currentSessionTodos = [];
+    }
 }

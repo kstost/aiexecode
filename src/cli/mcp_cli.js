@@ -1,4 +1,4 @@
-// MCP CLI 명령어 등록 - Claude Code 스타일
+// MCP CLI 명령어 등록
 import { Command } from 'commander';
 import {
     addMcpServer,

@@ -8,6 +8,7 @@ import { GLOB_FUNCTIONS, globSearchSchema } from "../tools/glob.js";
 import { CODE_EDITOR_FUNCTIONS, writeFileSchema, editFileRangeSchema, editFileReplaceSchema } from "../tools/code_editor.js";
 import { WEB_DOWNLOADER_FUNCTIONS, fetchWebPageSchema } from "../tools/web_downloader.js";
 import { RESPONSE_MESSAGE_FUNCTIONS, responseMessageSchema } from '../tools/response_message.js';
+import { TODO_WRITE_FUNCTIONS, todoWriteSchema } from '../tools/todo_write.js';
 import { runPythonCodeSchema, bashSchema } from '../system/code_executer.js';
 
 // 도구 스키마 레지스트리
@@ -22,7 +23,8 @@ const TOOL_SCHEMAS = {
     'fetch_web_page': fetchWebPageSchema,
     'ripgrep': ripgrepSchema,
     'run_python_code': runPythonCodeSchema,
-    'bash': bashSchema
+    'bash': bashSchema,
+    'todo_write': todoWriteSchema
 };
 
 /**
@@ -162,6 +164,7 @@ export function getAllToolFunctions() {
         ...RIPGREP_FUNCTIONS,
         ...GLOB_FUNCTIONS,
         ...WEB_DOWNLOADER_FUNCTIONS,
-        ...RESPONSE_MESSAGE_FUNCTIONS
+        ...RESPONSE_MESSAGE_FUNCTIONS,
+        ...TODO_WRITE_FUNCTIONS
     };
 }

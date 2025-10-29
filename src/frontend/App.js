@@ -11,6 +11,7 @@ import { Input } from './components/Input.js';
 import { SessionSpinner } from './components/SessionSpinner.js';
 import { ConversationItem } from './components/ConversationItem.js';
 import { BlankLine } from './components/BlankLine.js';
+import { TodoList } from './components/TodoList.js';
 import { useTextBuffer } from './utils/inputBuffer.js';
 import { uiEvents } from '../system/ui_events.js';
 import { getToolDisplayConfig, extractMessageFromArgs, formatToolCall, formatToolResult, getToolDisplayName } from '../system/tool_registry.js';
@@ -348,6 +349,7 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
     const [sessionMessage, setSessionMessage] = useState('Processing...');
     const [approvalRequest, setApprovalRequest] = useState(null);
     const [showSetupWizard, setShowSetupWizard] = useState(false);
+    const [todos, setTodos] = useState([]);
 
     // Static items: 메모이제이션된 React 엘리먼트들 (Static 컴포넌트 제거로 스크롤 문제 해결)
     const [staticItems, setStaticItems] = useState(() => [
@@ -388,6 +390,9 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
         // Add to history only if it's not a slash command
         if (!text.trim().startsWith('/')) {
             const userEvent = { type: 'user', text };
+
+            // Clear todos when starting a new mission
+            setTodos([]);
 
             // history에 추가
             setHistory(prev => [...prev, userEvent]);
@@ -870,6 +875,13 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
             setShowSetupWizard(true);
         };
 
+        const handleTodosUpdate = (event) => {
+            if (event.todos) {
+                debugLog(`[handleTodosUpdate] Updating todos: ${event.todos.length} items`);
+                setTodos(event.todos);
+            }
+        };
+
         uiEvents.on('history:add', handleHistoryAdd);
         uiEvents.on('session:state', handleSessionState);
         uiEvents.on('screen:clear', handleClearScreen);
@@ -877,6 +889,7 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
         uiEvents.on('model:changed', handleModelChanged);
         uiEvents.on('reasoning_effort:changed', handleReasoningEffortChanged);
         uiEvents.on('setup:show', handleSetupShow);
+        uiEvents.on('todos:update', handleTodosUpdate);
 
         return () => {
             uiEvents.off('history:add', handleHistoryAdd);
@@ -886,6 +899,7 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
             uiEvents.off('model:changed', handleModelChanged);
             uiEvents.off('reasoning_effort:changed', handleReasoningEffortChanged);
             uiEvents.off('setup:show', handleSetupShow);
+            uiEvents.off('todos:update', handleTodosUpdate);
         };
     }, [addToHistory, handleSessionTransition]);
 
@@ -978,6 +992,9 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
             !approvalRequest && React.createElement(SessionSpinner, {
                 isRunning: isSessionRunning,
                 message: sessionMessage
+            }),
+            !approvalRequest && todos.length > 0 && React.createElement(TodoList, {
+                todos: todos
             }),
             !approvalRequest && React.createElement(Input, {
                 buffer,

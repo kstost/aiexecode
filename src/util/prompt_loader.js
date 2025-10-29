@@ -1,6 +1,7 @@
 import { safeReadFile, safeAccess } from "./safe_fs.js";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import ejs from "ejs";
 
 const moduleDirname = dirname(fileURLToPath(import.meta.url));
 const defaultProjectRoot = dirname(dirname(moduleDirname));
@@ -71,11 +72,18 @@ async function loadPromptFromPromptsDir(promptFileName) {
 export async function createSystemMessage(promptFileName, templateVars = {}) {
     let content = await loadPromptFromPromptsDir(promptFileName);
 
-    // 템플릿 변수가 제공된 경우, {{key}} 형태의 플레이스홀더를 치환
+    // EJS 템플릿 엔진을 사용하여 렌더링
     if (templateVars && typeof templateVars === 'object') {
-        for (const [key, value] of Object.entries(templateVars)) {
-            const placeholder = `{{${key}}}`;
-            content = content.replaceAll(placeholder, value);
+        try {
+            content = ejs.render(content, templateVars, {
+                // EJS 옵션
+                delimiter: '%',  // <% %> 구문 사용
+                openDelimiter: '<',
+                closeDelimiter: '>'
+            });
+        } catch (err) {
+            // EJS 렌더링 실패 시 원본 content 유지
+            console.error(`EJS rendering failed for ${promptFileName}:`, err.message);
         }
     }
 

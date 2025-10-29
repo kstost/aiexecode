@@ -9,10 +9,12 @@ import { readFileSchema, readFileRangeSchema } from "../tools/file_reader.js";
 import { writeFileSchema, editFileRangeSchema, editFileReplaceSchema } from "../tools/code_editor.js";
 import { fetchWebPageSchema } from "../tools/web_downloader.js";
 import { responseMessageSchema } from "../tools/response_message.js";
+import { todoWriteSchema } from "../tools/todo_write.js";
 import { ripgrepSchema } from "../tools/ripgrep.js";
 import { globSearchSchema } from "../tools/glob.js";
 import { loadSettings } from "../util/config.js";
 import { createDebugLogger } from "../util/debug_log.js";
+import { getCurrentTodos } from "../system/session_memory.js";
 dotenv.config({ quiet: true });
 
 const debugLog = createDebugLogger('orchestrator.log', 'orchestrator');
@@ -31,12 +33,31 @@ async function ensureConversationInitialized() {
         OS: process.app_custom?.systemInfo?.os || 'unknown'
     });
 
+    // 현재 todos 가져오기
+    const currentTodos = getCurrentTodos();
+
+    // todos를 system message에 추가
+    let systemMessageText = systemMessage.content;
+    if (currentTodos && currentTodos.length > 0) {
+        const todosSection = '\n\n## Current Task List (Your TODO tracker)\n\n' +
+            'You have created the following task list to track your work. Continue working on these tasks systematically:\n\n' +
+            currentTodos.map((todo, index) => {
+                const statusIcon = todo.status === 'completed' ? '✓' :
+                                  todo.status === 'in_progress' ? '→' : '○';
+                return `${index + 1}. [${statusIcon}] ${todo.content} (${todo.status})`;
+            }).join('\n') +
+            '\n\n**Remember**: Mark tasks as completed immediately after finishing them. Keep exactly ONE task as in_progress at a time.\n';
+
+        systemMessageText += todosSection;
+        debugLog(`[ensureConversationInitialized] Added ${currentTodos.length} todos to system message`);
+    }
+
     const systemMessageEntry = {
         role: "system",
         content: [
             {
                 type: "input_text",
-                text: systemMessage.content
+                text: systemMessageText
             }
         ]
     };
@@ -428,6 +449,7 @@ export async function orchestrateMission({ improvement_points = '', mcpToolSchem
         edit_file_range: editFileRangeSchema,
         edit_file_replace: editFileReplaceSchema,
         response_message: responseMessageSchema,
+        todo_write: todoWriteSchema,
         ripgrep: ripgrepSchema,
         glob_search: globSearchSchema
     };

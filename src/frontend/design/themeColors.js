@@ -6,8 +6,8 @@ const defaultTheme = {
     text: {
         primary: '#E0E0E0',
         secondary: '#888888',
-        accent: '#3fbe96',
-        link: '#3fbe96',
+        accent: '#47c9a0',
+        link: '#47c9a0',
     },
     background: {
         default: '#1E1E1E',
@@ -28,8 +28,8 @@ const defaultTheme = {
         info: '#00A8FF',
     },
     brand: {
-        dark: '#418972',
-        light: '#3fbe96',
+        dark: '#113429',
+        light: '#47c9a0',
     },
 };
 

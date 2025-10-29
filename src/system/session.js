@@ -8,9 +8,10 @@ import { GLOB_FUNCTIONS } from "../tools/glob.js";
 import { CODE_EDITOR_FUNCTIONS } from "../tools/code_editor.js";
 import { WEB_DOWNLOADER_FUNCTIONS } from "../tools/web_downloader.js";
 import { RESPONSE_MESSAGE_FUNCTIONS } from '../tools/response_message.js';
+import { TODO_WRITE_FUNCTIONS } from '../tools/todo_write.js';
 import { clampOutput, formatToolStdout } from "../util/output_formatter.js";
 import { buildToolHistoryEntry } from "../util/rag_helper.js";
-import { createSessionData, getLastConversationState, loadPreviousSessions, saveSessionToHistory } from "./session_memory.js";
+import { createSessionData, getLastConversationState, loadPreviousSessions, saveSessionToHistory, saveTodosToSession, restoreTodosFromSession, updateCurrentTodos } from "./session_memory.js";
 import { uiEvents } from "./ui_events.js";
 import { logSystem, logError, logAssistantMessage, logToolCall, logToolResult, logCodeExecution, logCodeResult, logIteration, logMissionComplete, logConversationRestored } from "./output_helper.js";
 import { requiresApproval, requestApproval } from "./tool_approval.js";
@@ -845,10 +846,18 @@ export async function runSession(options) {
                 conversationState.orchestratorConversation,
                 conversationState.orchestratorRequestOptions
             );
+            // Todos 복원
+            if (conversationState.currentTodos) {
+                restoreTodosFromSession({ currentTodos: conversationState.currentTodos });
+                debugLog(`[runSession] Restored ${conversationState.currentTodos.length} todos from previous session`);
+            }
             // logSuccess('✓ Conversation state restored');
         } else {
             // logSystem('ℹ Starting with fresh conversation state');
             resetOrchestratorConversation();
+            // Clear todos for fresh session
+            updateCurrentTodos([]);
+            debugLog(`[runSession] Starting fresh session - todos cleared`);
         }
 
         // Python 사용 가능 여부 확인
@@ -861,6 +870,7 @@ export async function runSession(options) {
             ...RIPGREP_FUNCTIONS,
             ...GLOB_FUNCTIONS,
             ...RESPONSE_MESSAGE_FUNCTIONS,
+            ...TODO_WRITE_FUNCTIONS,
             ...mcpToolFunctions,
             "bash": async (args) => execShellScript(args.script)
         };
@@ -988,6 +998,9 @@ export async function runSession(options) {
                 currentSessionData.toolUsageHistory = toolUsageHistory;
                 currentSessionData.orchestratorConversation = getOrchestratorConversation();
                 currentSessionData.orchestratorRequestOptions = null;
+
+                // Todos를 세션에 저장
+                saveTodosToSession(currentSessionData);
 
                 debugLog(`[ITERATION ${iteration_count}] Saving session to history after completion_judge (mission_solved=${mission_solved})`);
                 await saveSessionToHistory(currentSessionData).catch(err => {

@@ -1,4 +1,4 @@
-// MCP 설정 관리 유틸리티 - Claude Code 스타일
+// MCP 설정 관리 유틸리티
 import { safeReadFile, safeWriteFile, safeMkdir } from './safe_fs.js';
 import { join } from 'path';
 import { createHash } from 'crypto';

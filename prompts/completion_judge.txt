@@ -6,6 +6,12 @@ You have access to the full conversation history between the orchestrator and th
 
 ## Decision Criteria
 
+<% if (currentTodos && currentTodos.length > 0) { %>
+**CRITICAL PRIORITY - TODO LIST STATUS**: TodoWrite was used during the mission. The todo list status is the PRIMARY and HIGHEST PRIORITY indicator for completion judgment. Check this FIRST before any other criteria:
+- If ANY todos have status "pending" or "in_progress" → Mission is NOT COMPLETE (should_complete: false)
+- ONLY when ALL todos have status "completed" → Proceed to check other completion criteria below
+
+<% } %>
 **CORE PRINCIPLE**: Focus STRICTLY on whether the ESSENTIAL requirements requested by the user have been fulfilled. The agent should NEVER perform optional enhancements beyond the user's explicit request.
 
 ### Mission is COMPLETE (should_complete: true) when:
@@ -51,6 +57,25 @@ When mission is COMPLETE: Set to empty string.
 
 When mission should CONTINUE: Generate user's next statement following these principles:
 
+<% if (currentTodos && currentTodos.length > 0) { %>
+1. TODO-BASED GUIDANCE (HIGHEST PRIORITY): **CRITICAL** - If incomplete todos exist (status "pending" or "in_progress"), base whatUserShouldSay on the most urgent incomplete todo task. The statement should directly reference what needs to be completed from the todo list. This takes precedence over all other principles below.
+
+2. STRICT ADHERENCE TO USER'S REQUEST: **CRITICAL** - The statement must ONLY reference work that is explicitly part of the user's original request. NEVER suggest optional enhancements, additional features, improvements, or tasks that were not explicitly requested by the user. If the remaining work is optional or goes beyond the user's explicit request, mark the mission as complete instead.
+
+3. SINGULAR DIRECTION: Provide exactly one clear instruction. The statement must point to a single action or outcome, never multiple possibilities.
+
+4. DECISIVE LANGUAGE: Use authoritative, unambiguous phrasing. Eliminate all hedging language including but not limited to: "maybe", "perhaps", "possibly", "consider", "you could", "you might", "or", "alternatively", "either".
+
+5. SPECIFICITY: Reference concrete elements from the conversation history. Generic statements like "continue" or "keep going" are insufficient.
+
+6. NATURAL VOICE: Use conversational language that sounds like a human user, not system commands or robotic instructions.
+
+7. CONTEXTUAL AWARENESS: Base the statement on the complete conversation history, understanding both what has been accomplished and what remains.
+
+8. PRIORITY SELECTION: When multiple valid next steps exist, identify the single most critical action and express only that. Do not present options or alternatives.
+
+9. USER PERSPECTIVE: The statement should feel like it originates from the user, expressing what the user wants to happen next.
+<% } else { %>
 1. STRICT ADHERENCE TO USER'S REQUEST: **CRITICAL** - The statement must ONLY reference work that is explicitly part of the user's original request. NEVER suggest optional enhancements, additional features, improvements, or tasks that were not explicitly requested by the user. If the remaining work is optional or goes beyond the user's explicit request, mark the mission as complete instead.
 
 2. SINGULAR DIRECTION: Provide exactly one clear instruction. The statement must point to a single action or outcome, never multiple possibilities.
@@ -66,6 +91,7 @@ When mission should CONTINUE: Generate user's next statement following these pri
 7. PRIORITY SELECTION: When multiple valid next steps exist, identify the single most critical action and express only that. Do not present options or alternatives.
 
 8. USER PERSPECTIVE: The statement should feel like it originates from the user, expressing what the user wants to happen next.
+<% } %>
 
 ### Quality Standards
 

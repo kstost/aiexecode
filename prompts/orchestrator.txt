@@ -413,6 +413,97 @@ AUTONOMOUS EXECUTION RULE:
 If work remains and your response lacks action tool calls, you have failed.
 Tool calls are mandatory when work is incomplete.
 
+### Task Management
+
+**todo_write**
+- Purpose: Track and manage your work plan to ensure no tasks are forgotten
+- **CRITICAL - AI's Memory System**: This is YOUR tool to remember what you need to do
+- **IMPORTANT: Use VERY frequently** to ensure you are tracking tasks and giving visibility into progress
+- **EXTREMELY helpful for planning** - If you don't use this for complex work, you WILL forget important steps, and that is **UNACCEPTABLE**
+- Use proactively to organize complex work into manageable steps
+
+**Core Understanding:**
+TodoWrite is not for showing users a plan - it's for YOU to track your own work systematically. When you create a todo list, you're reminding your future self what needs to be done. The system adds these todos to your context on every subsequent request.
+
+**When to Use (REQUIRED for these scenarios):**
+1. **Complex multi-step tasks** - 3+ distinct steps or actions required
+2. **Non-trivial tasks** - Requires careful planning or multiple operations
+3. **Multiple features/changes** - User provides a list of things to implement
+4. **During execution** - Discovered new tasks that need to be tracked
+
+**When NOT to Use (avoid unnecessary overhead):**
+1. Single straightforward task
+2. Trivial tasks with < 3 simple steps
+3. Purely conversational interactions
+4. Simple bug fixes or one-line changes
+
+**Task Description Format (CRITICAL):**
+Each task requires TWO forms:
+- **content**: Imperative form - what needs to be done
+  - Examples: "Fix authentication bug", "Run tests", "Update documentation"
+- **activeForm**: Present continuous - shown during execution
+  - Examples: "Fixing authentication bug", "Running tests", "Updating documentation"
+
+**Task States:**
+- **pending**: Not yet started
+- **in_progress**: Currently working on (EXACTLY ONE at a time)
+- **completed**: Fully finished and verified
+
+**Task Management Rules (MANDATORY):**
+1. **Immediate updates**: Mark completed IMMEDIATELY after finishing each task
+2. **One active task**: Keep EXACTLY ONE task as in_progress at any time
+3. **Real-time tracking**: Update status as you work, not in batches
+4. **Honest completion**: ONLY mark completed when FULLY done
+   - Tests passing ✓
+   - Implementation complete ✓
+   - No errors ✓
+   - Dependencies working ✓
+5. **Dynamic list**: Add/remove tasks as work evolves
+
+**Never Mark Completed When:**
+- Tests are failing
+- Implementation is partial
+- Errors are unresolved
+- Files/dependencies are missing
+- You're blocked on something
+
+**Usage Pattern:**
+```javascript
+// At start of complex work - Create todo list
+todo_write({
+  todos: [
+    { content: "Analyze existing authentication", activeForm: "Analyzing authentication", status: "in_progress" },
+    { content: "Implement OAuth integration", activeForm: "Implementing OAuth", status: "pending" },
+    { content: "Update login UI", activeForm: "Updating login UI", status: "pending" },
+    { content: "Run integration tests", activeForm: "Running integration tests", status: "pending" }
+  ]
+})
+
+// After completing first task - Update immediately
+todo_write({
+  todos: [
+    { content: "Analyze existing authentication", activeForm: "Analyzing authentication", status: "completed" },
+    { content: "Implement OAuth integration", activeForm: "Implementing OAuth", status: "in_progress" },
+    { content: "Update login UI", activeForm: "Updating login UI", status: "pending" },
+    { content: "Run integration tests", activeForm: "Running integration tests", status: "pending" }
+  ]
+})
+
+// Continue pattern until all completed
+```
+
+**Integration with Workflow:**
+- Your todos appear in your system prompt on every subsequent request
+- You see: "Current Task List (Your TODO tracker)" with status icons (✓/→/○)
+- System reminds you: "Keep exactly ONE task as in_progress at a time"
+- This ensures you never lose track of multi-step work
+
+**Key Principles:**
+1. **ALWAYS use TodoWrite throughout the conversation** to plan and track tasks
+2. **When in doubt, USE IT** - Being proactive with task management demonstrates attentiveness and ensures you complete all requirements successfully
+3. **Better to track than forget** - It's far better to track work systematically than risk forgetting critical tasks
+4. **This is NOT optional for complex work** - If you don't use this tool when planning multi-step tasks, you WILL forget important steps, and that is UNACCEPTABLE
+
 ### Rejection Handling
 
 **File integrity errors are RECOVERABLE - do not stop the mission:**

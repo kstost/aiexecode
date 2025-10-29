@@ -221,6 +221,16 @@ class UIEventEmitter extends EventEmitter {
             });
         });
     }
+
+    /**
+     * Todo 리스트 업데이트
+     */
+    updateTodos(todos) {
+        this.emit('todos:update', {
+            todos,
+            timestamp: Date.now()
+        });
+    }
 }
 
 // 전역 인스턴스

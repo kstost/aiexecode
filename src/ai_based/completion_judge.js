@@ -3,6 +3,7 @@ import { request, isContextWindowError, getModelForProvider } from "../system/ai
 import { getOrchestratorConversation } from "./orchestrator.js";
 import { createSystemMessage } from "../util/prompt_loader.js";
 import { createDebugLogger } from "../util/debug_log.js";
+import { getCurrentTodos } from "../system/session_memory.js";
 
 dotenv.config({ quiet: true });
 
@@ -252,9 +253,19 @@ export async function judgeMissionCompletion(templateVars = {}) {
         const requestOptions = await createCompletionJudgeRequestOptions();
         debugLog(`[judgeMissionCompletion] Request options - model: ${requestOptions.model}, isGpt5Model: ${requestOptions.isGpt5Model}`);
 
+        // 현재 todos를 가져와서 templateVars에 추가
+        const currentTodos = getCurrentTodos();
+        debugLog(`[judgeMissionCompletion] Current todos count: ${currentTodos.length}`);
+
+        // templateVars에 currentTodos 추가 (EJS 템플릿에서 조건부 렌더링)
+        const enhancedTemplateVars = {
+            ...templateVars,
+            currentTodos: currentTodos
+        };
+
         // Completion judge 자체 system 메시지 초기화 (템플릿 변수 전달)
         debugLog(`[judgeMissionCompletion] Initializing completion judge conversation...`);
-        await ensureCompletionJudgeConversationInitialized(templateVars);
+        await ensureCompletionJudgeConversationInitialized(enhancedTemplateVars);
         debugLog(`[judgeMissionCompletion] Conversation initialized, length: ${completionJudgeConversation.length}`);
 
         // Orchestrator의 대화 내용 동기화 (system 메시지 제외)
