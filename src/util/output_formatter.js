@@ -23,9 +23,15 @@ export function clampOutput(text) {
 /**
  * 파일 읽기 결과에 줄 번호 추가
  * @param {Object} result - 파일 읽기 실행 결과
- * @returns {string} 줄 번호가 포함된 파일 내용
+ * @returns {string} 줄 번호가 포함된 파일 내용 또는 에러 정보
  */
 export function formatReadFileStdout(result) {
+    // 실패한 경우 에러 정보를 JSON 형태로 반환
+    if (result.operation_successful === false) {
+        return JSON.stringify(result, null, 2);
+    }
+    
+    // 성공한 경우 줄 번호와 함께 파일 내용 반환
     let stdout = '';
     if (result.file_lines) {
         result.file_lines.map((line, line_number) => {
