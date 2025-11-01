@@ -43,8 +43,7 @@ async function willDefinitelyFail(toolName, args) {
         try {
             const absolutePath = resolve(args.file_path);
 
-            // 스냅샷만 확인 (실제 파일을 읽지 않음)
-            // 편집 도구는 반드시 먼저 read_file로 읽어야 함
+            // 스냅샷 확인 (파일을 먼저 read_file로 읽었는지 확인)
             const snapshot = getFileSnapshot(absolutePath);
             const content = snapshot?.content;
 
@@ -53,7 +52,7 @@ async function willDefinitelyFail(toolName, args) {
                 return { willFail: true, reason: 'File not read yet or empty' };
             }
 
-            // old_string이 파일에 없는 경우
+            // old_string이 스냅샷에 없는 경우
             const oldString = args.old_string || '';
             if (!content.includes(oldString)) {
                 return { willFail: true, reason: 'old_string not found in file' };
@@ -64,19 +63,31 @@ async function willDefinitelyFail(toolName, args) {
         }
     }
 
-    // edit_file_range: 스냅샷이 없는 경우
+    // edit_file_range: 스냅샷이 없거나 라인 범위가 잘못된 경우
     if (toolName === 'edit_file_range') {
         try {
             const absolutePath = resolve(args.file_path);
 
-            // 스냅샷만 확인 (실제 파일을 읽지 않음)
-            // 편집 도구는 반드시 먼저 read_file로 읽어야 함
+            // 스냅샷 확인 (파일을 먼저 read_file로 읽었는지 확인)
             const snapshot = getFileSnapshot(absolutePath);
             const content = snapshot?.content;
 
             // 스냅샷이 없으면 확실히 실패 (파일을 먼저 읽지 않았음)
             if (content === undefined || content === null) {
                 return { willFail: true, reason: 'File not read yet or empty' };
+            }
+
+            // 라인 범위 검증
+            const lines = content.split('\n');
+            const totalLines = content === '' ? 0 :
+                (content.endsWith('\n') ? lines.length - 1 : lines.length);
+
+            if (args.start_line < 1 || args.end_line < args.start_line - 1) {
+                return { willFail: true, reason: 'Invalid line range' };
+            }
+
+            if (args.start_line > totalLines + 1 || args.end_line > totalLines) {
+                return { willFail: true, reason: `Line range exceeds file length (${totalLines} lines)` };
             }
         } catch (error) {
             return { willFail: true, reason: `Validation error: ${error.message}` };

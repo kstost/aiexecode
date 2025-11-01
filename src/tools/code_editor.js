@@ -442,7 +442,6 @@ export async function edit_file_replace({ file_path, old_string, new_string }) {
         return {
             operation_successful: true,
             target_file_path: absolutePath,
-            absolute_file_path: absolutePath,
             replacement_count: replacementCount,
             fileSnapshot: fileSnapshot,  // UI 히스토리에서 정확한 diff 표시를 위해 편집 전 스냅샷 포함
             file_stats: {
@@ -654,7 +653,6 @@ export async function edit_file_range({ file_path, start_line, end_line, new_con
             operation_successful: true,
             operation_type: operationType,
             target_file_path: absolutePath,
-            absolute_file_path: absolutePath,
             fileSnapshot: fileSnapshot,  // UI 히스토리에서 정확한 diff 표시를 위해 편집 전 스냅샷 포함
             file_stats: {
                 updated_content: newFileContent  // 수정 후 전체 파일 내용

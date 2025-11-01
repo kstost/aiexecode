@@ -121,18 +121,6 @@ export function recordOrchestratorToolResult({ toolCallId, toolName = '', argume
         return null;
     }
 
-    if (toolName === 'read_file') {
-        const filePath = toolArguments.filePath || '';
-        const absolutePath = path.isAbsolute(filePath)
-            ? filePath
-            : path.join(process.cwd(), filePath);
-
-        stdout = JSON.stringify({
-            absolute_file_path: absolutePath,
-            content: stdout
-        });
-    }
-
     const payload = {
         tool: toolName || null,
         call_id: toolCallId,

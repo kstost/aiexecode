@@ -1,5 +1,6 @@
 import { safeReadFile } from '../util/safe_fs.js';
 import { resolve } from 'path';
+import { createHash } from 'crypto';
 import { trackFileRead, saveFileSnapshot } from '../system/file_integrity.js';
 import { createDebugLogger } from '../util/debug_log.js';
 import { toDisplayPath } from '../util/path_helper.js';
@@ -77,6 +78,11 @@ export async function read_file({ filePath }) {
         saveFileSnapshot(absolutePath, content);
         debugLog(`Snapshot saved`);
 
+        // MD5 해시 계산
+        debugLog(`Calculating MD5 hash...`);
+        const md5Hash = createHash('md5').update(content).digest('hex');
+        debugLog(`MD5 hash: ${md5Hash}`);
+
         debugLog('========== read_file SUCCESS END ==========');
 
         return {
@@ -84,8 +90,7 @@ export async function read_file({ filePath }) {
             target_file_path: absolutePath,
             total_line_count: totalLines,
             file_content: content,
-            file_lines: content === '' ? [] :
-                (content.endsWith('\n') ? lines.slice(0, -1) : lines)
+            md5_hash: md5Hash
         };
     } catch (error) {
         debugLog(`========== read_file EXCEPTION ==========`);
@@ -200,6 +205,11 @@ export async function read_file_range({ filePath, startLine, endLine }) {
         saveFileSnapshot(absolutePath, content);
         debugLog(`Snapshot saved`);
 
+        // MD5 해시 계산 (전체 파일 내용에 대해)
+        debugLog(`Calculating MD5 hash...`);
+        const md5Hash = createHash('md5').update(content).digest('hex');
+        debugLog(`MD5 hash: ${md5Hash}`);
+
         // 라인 번호 유효성 검사 (1부터 시작)
         debugLog(`Validating line range...`);
         if (startLine < 1) {
@@ -225,16 +235,6 @@ export async function read_file_range({ filePath, startLine, endLine }) {
         const selectedLines = actualLines.slice(startLine - 1, endLine);
         debugLog(`Extracted ${selectedLines.length} lines`);
 
-        const numberedLines = selectedLines.map((line, index) => ({
-            line_number: startLine + index,
-            line_content: line
-        }));
-
-        // file_content에 라인 번호 추가
-        const contentWithLineNumbers = selectedLines
-            .map((line, index) => `${startLine + index}| ${line}`)
-            .join('\n');
-
         debugLog('========== read_file_range SUCCESS END ==========');
 
         return {
@@ -246,8 +246,8 @@ export async function read_file_range({ filePath, startLine, endLine }) {
                 start_line: startLine,
                 end_line: Math.min(endLine, totalLines)
             },
-            file_content: contentWithLineNumbers,
-            file_lines: selectedLines
+            file_content: selectedLines.join('\n'),
+            md5_hash: md5Hash
         };
     } catch (error) {
         debugLog(`========== read_file_range EXCEPTION ==========`);
@@ -300,7 +300,7 @@ export const readFileRangeSchema = {
         },
         "format_tool_result": (result) => {
             if (result.operation_successful) {
-                const lineCount = result.file_lines?.length || 0;
+                const lineCount = result.file_content ? result.file_content.split('\n').length : 0;
                 return {
                     type: 'formatted',
                     parts: [

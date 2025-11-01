@@ -193,10 +193,36 @@ export async function request(taskName, requestPayload) {
     }
 
     debugLog(`[request] Starting payload transformation...`);
+    const isValidJSON = (json) => {
+        if (typeof json !== 'string') return false;
+        try {
+            JSON.parse(json);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+    if (true && payloadCopy.input && Array.isArray(payloadCopy.input)) {
+        for (let i = payloadCopy.input.length - 1; i >= 0; i--) {
+            const msg = payloadCopy.input[i];
+            const { type, call_id, output } = msg;
+            if (type !== 'function_call_output') continue;
+            const parsedOutput = JSON.parse(output);
+            if (!isValidJSON(parsedOutput.stdout)) {
+                msg.output = parsedOutput.stdout;
+            } else {
+                parsedOutput.stdout = JSON.parse(parsedOutput.stdout);
+                if (parsedOutput.original_result) {
+                    parsedOutput.stdout = ({ ...parsedOutput.original_result, ...(parsedOutput.stdout) });
+                    delete parsedOutput.original_result;
+                }
+                msg.output = parsedOutput;
+            }
+        }
+    }
     if (payloadCopy.input && Array.isArray(payloadCopy.input)) {
         const marker = {};
         const remove_call_id = {};//[];
-        const response_message_call_id = {};
 
         debugLog(`[request] Processing ${payloadCopy.input.length} input messages for deduplication and formatting`);
         let processedCount = 0;
@@ -207,105 +233,182 @@ export async function request(taskName, requestPayload) {
             if (type !== 'function_call_output') continue;
             processedCount++;
 
-            debugLog(`[ai_request] Processing function_call_output, call_id: ${call_id}, output length: ${output?.length || 0}`);
+            if ((typeof output) === 'string') continue;
+            const { tool, stdout, stderr, exit_code, original_result } = output;
 
-            const parsedOutput = JSON.parse(output);
-            const { tool, stdout, stderr, exit_code } = parsedOutput;
-
-            debugLog(`[ai_request] Parsed output - tool: ${tool}, stdout: ${stdout?.length || 0} bytes, stderr: ${stderr?.length || 0} bytes`);
-
-            if (tool === 'edit_file_range') {
-                const parsedStdout = JSON.parse(stdout);
-                if (!parsedStdout.absolute_file_path) continue;
-                let abolute_path = toAbsolutePath(parsedStdout.absolute_file_path)
-                const updated_content = parsedStdout.file_stats?.updated_content;
-                delete parsedStdout.absolute_file_path;
-                delete parsedStdout.file_stats;
-                if (marker[abolute_path]) {
-                    parsedStdout.target_file_path;
-                } else {
-                    if (updated_content) {
-                        parsedStdout.updated_content = formatReadFileStdout({ file_lines: updated_content.split('\n') });
-                    }
-                }
+            if (stdout?.operation_successful?.constructor === Boolean && !stdout.operation_successful) continue;
+            if (tool === 'edit_file_range' || tool === 'edit_file_replace') {
+                let abolute_path = toAbsolutePath(stdout.target_file_path);
+                const updated_content = stdout.file_stats?.updated_content;
+                delete stdout.file_stats;
+                if (!marker[abolute_path] && updated_content) stdout.updated_content = updated_content.split('\n');
                 marker[abolute_path] = true;
-                msg.output = JSON.stringify(parsedStdout, null, 2);
-                debugLog(`[ai_request] edit_file_range - new output length: ${msg.output.length}`);
-            }
-            else if (tool === 'edit_file_replace') {
-                const parsedStdout = JSON.parse(stdout);
-                if (!parsedStdout.absolute_file_path) continue;
-                let abolute_path = toAbsolutePath(parsedStdout.absolute_file_path)
-                const updated_content = parsedStdout.file_stats?.updated_content;
-                delete parsedStdout.absolute_file_path;
-                delete parsedStdout.file_stats;
-                if (marker[abolute_path]) {
-                    parsedStdout.target_file_path;
-                } else {
-                    if (updated_content) {
-                        parsedStdout.updated_content = formatReadFileStdout({ file_lines: updated_content.split('\n') });
-                    }
-                }
-                marker[abolute_path] = true;
-                msg.output = JSON.stringify(parsedStdout, null, 2);
-                debugLog(`[ai_request] edit_file_replace - new output length: ${msg.output.length}`);
             }
             else if (tool === 'read_file') {
-                const parsedStdout = JSON.parse(stdout);
-                if (!parsedStdout.absolute_file_path) continue;
-                let abolute_path = toAbsolutePath(parsedStdout.absolute_file_path)
-                const content = parsedStdout.content;
+                let abolute_path = toAbsolutePath(stdout.target_file_path);
                 if (marker[abolute_path]) {
-                    remove_call_id[call_id] = true;//.push(call_id);
-                    msg.output = '(표시하지 않음)';
-                } else {
-                    msg.output = content;
+                    remove_call_id[call_id] = true;
+                    stdout.file_content = '(Not displayed)';
                 }
                 marker[abolute_path] = true;
-                debugLog(`[ai_request] read_file - new output length: ${msg.output.length}`);
-                // msg.output = 'FG';
-            } else {
-                debugLog(`[ai_request] OTHER TOOL (${tool}) - BEFORE: output is full JSON with stderr`);
-                // run_python_code, bash 등의 경우 stdout과 stderr를 모두 포함
-                let combinedOutput = '';
-                if (stdout && stderr) {
-                    combinedOutput = `stdout:\n${stdout}\n\nstderr:\n${stderr}`;
-                } else if (stdout) {
-                    combinedOutput = stdout;
-                } else if (stderr) {
-                    combinedOutput = `stderr:\n${stderr}`;
-                }
-                msg.output = combinedOutput;
-                debugLog(`[ai_request] OTHER TOOL (${tool}) - AFTER: output length: ${msg.output.length} bytes (stdout: ${stdout?.length || 0}, stderr: ${stderr?.length || 0})`);
+            }
+            else {
+                // debugLog(`[ai_request] OTHER TOOL (${tool}) - BEFORE: output is full JSON with stderr`);
+                // // run_python_code, bash 등의 경우 stdout과 stderr를 모두 포함
+                // let combinedOutput = '';
+                // if (stdout && stderr) {
+                //     combinedOutput = `stdout:\n${stdout}\n\nstderr:\n${stderr}`;
+                // } else if (stdout) {
+                //     combinedOutput = stdout;
+                // } else if (stderr) {
+                //     combinedOutput = `stderr:\n${stderr}`;
+                // }
+                // msg.output = combinedOutput;
+                // debugLog(`[ai_request] OTHER TOOL (${tool}) - AFTER: output length: ${msg.output.length} bytes (stdout: ${stdout?.length || 0}, stderr: ${stderr?.length || 0})`);
             }
         }
 
         debugLog(`[request] Processed ${processedCount} function_call_output entries`);
         debugLog(`[request] Marked files for deduplication: ${Object.keys(marker).length}`);
 
-        let responseMessageCount = 0;
+    }
+    if (true && payloadCopy.input && Array.isArray(payloadCopy.input)) {
+        const response_message_call_id = {};
         for (let i = payloadCopy.input.length - 1; i >= 0; i--) {
             const msg = payloadCopy.input[i];
             const { type, call_id, name } = msg;
             if (type !== 'function_call') continue;
             if (name !== 'response_message') continue;
             response_message_call_id[call_id] = true;
-            responseMessageCount++;
         }
-        debugLog(`[request] Found ${responseMessageCount} response_message function calls`);
-
-        let simplifiedResponseMessages = 0;
         for (let i = payloadCopy.input.length - 1; i >= 0; i--) {
             const msg = payloadCopy.input[i];
             const { type, call_id } = msg;
             if (type !== 'function_call_output') continue;
             if (!response_message_call_id[call_id]) continue;
-            msg.output = JSON.stringify({ message_displayed: true });
-            simplifiedResponseMessages++;
+            msg.output = {
+                tool: 'response_message',
+                stdout: { message_displayed: true }
+            };
         }
-        debugLog(`[request] Simplified ${simplifiedResponseMessages} response_message outputs`);
     }
+    // Formatting
+    if (true && payloadCopy.input && Array.isArray(payloadCopy.input)) {
+        for (let i = payloadCopy.input.length - 1; i >= 0; i--) {
+            const msg = payloadCopy.input[i];
+            const { type, call_id, output } = msg;
 
+            if (type !== 'function_call_output') continue;
+            if (typeof output === 'string') continue;
+            const { tool, stdout, stderr, exit_code, original_result } = output;
+            if (false) await safeWriteFile('./__stdout/' + tool + '.' + (call_id) + '.json', JSON.stringify(stdout, null, 2));
+
+            // read_file
+            if (tool === 'read_file') {
+                if (!stdout.operation_successful) {
+                    msg.output = stdout.error_message;
+                }
+                else {
+                    if (stdout.file_content.includes('\n')) {
+                        msg.output = formatReadFileStdout(stdout.file_content);
+                    } else {
+                        msg.output = (stdout.file_content);
+                    }
+                }
+                continue;
+            }
+
+            // read_file_range
+            if (tool === 'read_file_range') {
+                if (!stdout.operation_successful) {
+                    msg.output = stdout.error_message;
+                }
+                else {
+                    msg.output = formatReadFileStdout(stdout.file_content, stdout.actual_range.start_line);
+                }
+                continue;
+            }
+
+            // write_file
+            if (tool === 'write_file') {
+                if (!stdout.operation_successful) {
+                    msg.output = stdout.error_message;
+                } else {
+                    msg.output = `File written successfully: ${stdout.target_file_path}`;
+                }
+                continue;
+            }
+
+            // edit_file_replace
+            if (tool === 'edit_file_replace') {
+                if (!stdout.operation_successful) {
+                    msg.output = stdout.error_message;
+                } else {
+                    // const isString = stdout?.updated_content?.constructor === String;
+                    const newObj = {
+                        unified_diff_patch: stdout.diff_info.unified_diff_patch,
+                        operation_successful: stdout.operation_successful,
+                        updated_content: formatReadFileStdout(stdout?.updated_content?.join('\n')),
+                    };
+                    if (!(stdout?.updated_content)) delete newObj.updated_content;
+                    // if (!isString) delete newObj.updated_content;
+                    msg.output = JSON.stringify(newObj, null, 2);
+                }
+                continue;
+            }
+
+            // edit_file_range
+            if (tool === 'edit_file_range') {
+                msg.output = JSON.stringify(stdout, null, 2);
+                continue;
+            }
+
+            // ripgrep
+            if (tool === 'ripgrep') {
+                msg.output = JSON.stringify(stdout, null, 2);
+                continue;
+            }
+
+            // glob_search
+            if (tool === 'glob_search') {
+                msg.output = JSON.stringify(stdout, null, 2);
+                continue;
+            }
+
+            // fetch_web_page
+            if (tool === 'fetch_web_page') {
+                msg.output = JSON.stringify(stdout, null, 2);
+                continue;
+            }
+
+            // response_message
+            if (tool === 'response_message') {
+                msg.output = JSON.stringify(stdout, null, 2);
+                continue;
+            }
+
+            // todo_write
+            if (tool === 'todo_write') {
+                msg.output = JSON.stringify(stdout, null, 2);
+                continue;
+            }
+
+            // bash (from code_executer.js)
+            if (tool === 'bash') {
+                msg.output = JSON.stringify(stdout, null, 2);
+                continue;
+            }
+
+            // run_python_code (from code_executer.js)
+            if (tool === 'run_python_code') {
+                msg.output = JSON.stringify(stdout, null, 2);
+                continue;
+            }
+
+            // Default case for unknown tools
+            msg.output = JSON.stringify(stdout, null, 2);
+        }
+    }
     debugLog(`[request] Payload transformation complete`);
     let response;
     let originalRequest;
