@@ -246,7 +246,8 @@ export async function read_file_range({ filePath, startLine, endLine }) {
                 start_line: startLine,
                 end_line: Math.min(endLine, totalLines)
             },
-            file_content: contentWithLineNumbers
+            file_content: contentWithLineNumbers,
+            file_lines: selectedLines
         };
     } catch (error) {
         debugLog(`========== read_file_range EXCEPTION ==========`);
