@@ -1,9 +1,10 @@
 import dotenv from "dotenv";
-import { request, isContextWindowError, getModelForProvider } from "../system/ai_request.js";
+import { request, shouldRetryWithTrim, getModelForProvider } from "../system/ai_request.js";
 import { getOrchestratorConversation } from "./orchestrator.js";
 import { createSystemMessage } from "../util/prompt_loader.js";
 import { createDebugLogger } from "../util/debug_log.js";
 import { getCurrentTodos } from "../system/session_memory.js";
+import { cleanupOrphanOutputs, trimConversation } from "../system/conversation_trimmer.js";
 
 dotenv.config({ quiet: true });
 
@@ -116,16 +117,7 @@ function syncOrchestratorConversation() {
     debugLog(`[syncOrchestratorConversation] END`);
 }
 
-function trimCompletionJudgeConversation() {
-    for (let i = 1; i < completionJudgeConversation.length - 1; i++) {
-        const candidate = completionJudgeConversation[i];
-        if (candidate?.role !== "system") {
-            completionJudgeConversation.splice(i, 1);
-            return true;
-        }
-    }
-    return false;
-}
+// 대화 cleanup 및 trim 함수는 conversation_trimmer 모듈에서 가져옴
 
 async function dispatchCompletionJudgeRequest(options) {
     debugLog(`[dispatchCompletionJudgeRequest] START`);
@@ -140,9 +132,10 @@ async function dispatchCompletionJudgeRequest(options) {
     let attemptCount = 0;
     while (true) {
         attemptCount++;
-        debugLog(`[dispatchCompletionJudgeRequest] Attempt ${attemptCount}`);
+        debugLog(`[dispatchCompletionJudgeRequest] Attempt ${attemptCount} - starting cleanup...`);
+        cleanupOrphanOutputs(completionJudgeConversation);
 
-        const { model, isGpt5Model, taskName } = options;
+        debugLog(`[dispatchCompletionJudgeRequest] Conversation has ${completionJudgeConversation.length} entries`);
 
         // Conversation 구조 분석
         const conversationTypes = {};
@@ -151,7 +144,16 @@ async function dispatchCompletionJudgeRequest(options) {
             conversationTypes[type] = (conversationTypes[type] || 0) + 1;
         });
         debugLog(`[dispatchCompletionJudgeRequest] Conversation structure: ${JSON.stringify(conversationTypes)}`);
-        debugLog(`[dispatchCompletionJudgeRequest] Total conversation entries: ${completionJudgeConversation.length}`);
+
+        // function_call_output 항목들 확인
+        const functionCallOutputs = completionJudgeConversation.filter(item => item.type === 'function_call_output');
+        debugLog(`[dispatchCompletionJudgeRequest] Found ${functionCallOutputs.length} function_call_output entries`);
+
+        functionCallOutputs.forEach((item, index) => {
+            debugLog(`[dispatchCompletionJudgeRequest] function_call_output[${index}] - call_id: ${item.call_id}, output length: ${item.output?.length || 0}, output preview: ${item.output?.substring(0, 200)}`);
+        });
+
+        const { model, isGpt5Model, taskName } = options;
 
         const requestPayload = {
             model,
@@ -197,13 +199,13 @@ async function dispatchCompletionJudgeRequest(options) {
                 throw error;
             }
 
-            if (!isContextWindowError(error)) {
-                debugLog(`[dispatchCompletionJudgeRequest] Not a context window error, re-throwing`);
+            if (!shouldRetryWithTrim(error)) {
+                debugLog(`[dispatchCompletionJudgeRequest] Not recoverable by trimming, re-throwing`);
                 throw error;
             }
 
-            debugLog(`[dispatchCompletionJudgeRequest] Context window error detected, attempting to trim...`);
-            const trimmed = trimCompletionJudgeConversation();
+            debugLog(`[dispatchCompletionJudgeRequest] Recoverable error detected, attempting to trim...`);
+            const trimmed = trimConversation(completionJudgeConversation);
             debugLog(`[dispatchCompletionJudgeRequest] Trim result: ${trimmed}, new conversation length: ${completionJudgeConversation.length}`);
             if (!trimmed) {
                 debugLog(`[dispatchCompletionJudgeRequest] Cannot trim further, re-throwing error`);

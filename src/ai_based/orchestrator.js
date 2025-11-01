@@ -3,7 +3,8 @@ import dotenv from "dotenv";
 import path from 'path';
 import { truncateWithOmit } from "../util/text_formatter.js";
 import { createSystemMessage } from "../util/prompt_loader.js";
-import { request, isContextWindowError, getModelForProvider } from "../system/ai_request.js";
+import { request, shouldRetryWithTrim, getModelForProvider } from "../system/ai_request.js";
+import { cleanupOrphanOutputs, trimConversation } from "../system/conversation_trimmer.js";
 import { runPythonCodeSchema, bashSchema } from "../system/code_executer.js";
 import { readFileSchema, readFileRangeSchema } from "../tools/file_reader.js";
 import { writeFileSchema, editFileRangeSchema, editFileReplaceSchema } from "../tools/code_editor.js";
@@ -154,146 +155,7 @@ export function recordOrchestratorToolResult({ toolCallId, toolName = '', argume
     return toolResult;
 }
 
-function extractCallIdsFromItem(item) {
-    if (!item || typeof item !== 'object') {
-        return [];
-    }
-
-    const callIds = new Set();
-
-    const maybeIds = [item.call_id, item.tool_call_id, item.id];
-    for (const id of maybeIds) {
-        if (typeof id === 'string' && id.trim().length) {
-            callIds.add(id);
-        }
-    }
-
-    if (item.function && typeof item.function === 'object') {
-        const fnIds = [item.function.call_id, item.function.id];
-        for (const id of fnIds) {
-            if (typeof id === 'string' && id.trim().length) {
-                callIds.add(id);
-            }
-        }
-    }
-
-    if (Array.isArray(item.tool_calls)) {
-        for (const toolCall of item.tool_calls) {
-            extractCallIdsFromItem(toolCall).forEach(id => callIds.add(id));
-        }
-    }
-
-    return Array.from(callIds);
-}
-
-function removeConversationEntriesByCallIds(callIds) {
-    if (!Array.isArray(callIds) || callIds.length === 0) {
-        return;
-    }
-
-    const callIdSet = new Set(callIds.filter(id => typeof id === 'string' && id.trim().length));
-    if (!callIdSet.size) {
-        return;
-    }
-
-    for (let index = orchestratorConversation.length - 1; index >= 0; index--) {
-        const entry = orchestratorConversation[index];
-        if (!entry || typeof entry !== 'object') {
-            continue;
-        }
-
-        if (entry.type === 'function_call_output') {
-            if (callIdSet.has(entry.call_id)) {
-                orchestratorConversation.splice(index, 1);
-            }
-            continue;
-        }
-
-        if (Array.isArray(entry.tool_calls) && entry.tool_calls.length) {
-            const filteredToolCalls = entry.tool_calls.filter(toolCall => {
-                const ids = extractCallIdsFromItem(toolCall);
-                return !ids.some(id => callIdSet.has(id));
-            });
-
-            if (filteredToolCalls.length !== entry.tool_calls.length) {
-                if (filteredToolCalls.length === 0 && (!entry.content || entry.content.length === 0)) {
-                    orchestratorConversation.splice(index, 1);
-                } else {
-                    entry.tool_calls = filteredToolCalls;
-                }
-                continue;
-            }
-        }
-
-        const entryCallIds = extractCallIdsFromItem(entry);
-        if (entryCallIds.some(id => callIdSet.has(id))) {
-            orchestratorConversation.splice(index, 1);
-        }
-    }
-}
-
-function cleanupOrchestratorConversation() {
-    debugLog(`[cleanupOrchestratorConversation] Starting cleanup, conversation length: ${orchestratorConversation.length}`);
-
-    const validCallIds = new Set();
-
-    for (const entry of orchestratorConversation) {
-        if (!entry || typeof entry !== 'object') {
-            continue;
-        }
-
-        if (entry.type === 'function_call') {
-            const ids = extractCallIdsFromItem(entry);
-            debugLog(`[cleanupOrchestratorConversation] Found function_call with call_ids: ${ids.join(', ')}`);
-            ids.forEach(id => validCallIds.add(id));
-        }
-
-        if (Array.isArray(entry.tool_calls)) {
-            for (const toolCall of entry.tool_calls) {
-                const ids = extractCallIdsFromItem(toolCall);
-                debugLog(`[cleanupOrchestratorConversation] Found tool_call with call_ids: ${ids.join(', ')}`);
-                ids.forEach(id => validCallIds.add(id));
-            }
-        }
-    }
-
-    debugLog(`[cleanupOrchestratorConversation] Valid call IDs: ${Array.from(validCallIds).join(', ')}`);
-
-    for (let index = orchestratorConversation.length - 1; index >= 0; index--) {
-        const entry = orchestratorConversation[index];
-        if (entry?.type === 'function_call_output') {
-            const callId = entry.call_id;
-            if (!callId || !validCallIds.has(callId)) {
-                debugLog(`[cleanupOrchestratorConversation] REMOVING function_call_output at index ${index} with call_id: ${callId} (not in validCallIds)`);
-                orchestratorConversation.splice(index, 1);
-            } else {
-                debugLog(`[cleanupOrchestratorConversation] KEEPING function_call_output at index ${index} with call_id: ${callId}, output length: ${entry.output?.length || 0}`);
-            }
-        }
-    }
-
-    debugLog(`[cleanupOrchestratorConversation] Finished cleanup, conversation length: ${orchestratorConversation.length}`);
-}
-
-function trimOrchestratorConversation() {
-    if (orchestratorConversation.length <= 2) {
-        return false;
-    }
-
-    for (let i = 1; i < orchestratorConversation.length - 1; i++) {
-        const target = orchestratorConversation[i];
-        const callIds = extractCallIdsFromItem(target);
-
-        orchestratorConversation.splice(i, 1);
-
-        if (callIds.length) {
-            removeConversationEntriesByCallIds(callIds);
-        }
-
-        return true;
-    }
-    return false;
-}
+// 대화 cleanup 및 trim 함수는 conversation_trimmer 모듈에서 가져옴
 
 async function dispatchOrchestratorRequest({ toolChoice }) {
     debugLog(`[dispatchOrchestratorRequest] START - toolChoice: ${toolChoice}`);
@@ -309,7 +171,7 @@ async function dispatchOrchestratorRequest({ toolChoice }) {
     while (true) {
         attemptCount++;
         debugLog(`[dispatchOrchestratorRequest] Attempt ${attemptCount} - starting cleanup...`);
-        cleanupOrchestratorConversation();
+        cleanupOrphanOutputs(orchestratorConversation);
 
         debugLog(`[dispatchOrchestratorRequest] Conversation has ${orchestratorConversation.length} entries`);
 
@@ -370,15 +232,21 @@ async function dispatchOrchestratorRequest({ toolChoice }) {
             return response;
         } catch (error) {
             debugLog(`[dispatchOrchestratorRequest] API request failed: ${error.message}`);
-            debugLog(`[dispatchOrchestratorRequest] Error type: ${error?.constructor?.name}, code: ${error?.code}, status: ${error?.status}`);
+            debugLog(`[dispatchOrchestratorRequest] Error name: ${error.name}, type: ${error?.constructor?.name}`);
 
-            if (!isContextWindowError(error)) {
-                debugLog(`[dispatchOrchestratorRequest] Not a context window error, re-throwing`);
+            // AbortError는 즉시 전파 (세션 중단)
+            if (error.name === 'AbortError') {
+                debugLog(`[dispatchOrchestratorRequest] Request aborted by user, propagating AbortError`);
                 throw error;
             }
 
-            debugLog(`[dispatchOrchestratorRequest] Context window error detected, attempting to trim conversation...`);
-            const trimmed = trimOrchestratorConversation();
+            if (!shouldRetryWithTrim(error)) {
+                debugLog(`[dispatchOrchestratorRequest] Not recoverable by trimming, re-throwing`);
+                throw error;
+            }
+
+            debugLog(`[dispatchOrchestratorRequest] Recoverable error detected, attempting to trim conversation...`);
+            const trimmed = trimConversation(orchestratorConversation);
             debugLog(`[dispatchOrchestratorRequest] Trim result: ${trimmed}, new conversation length: ${orchestratorConversation.length}`);
             if (!trimmed) {
                 debugLog(`[dispatchOrchestratorRequest] Cannot trim further, re-throwing error`);

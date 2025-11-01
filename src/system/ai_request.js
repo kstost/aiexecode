@@ -424,37 +424,38 @@ export async function request(taskName, requestPayload) {
 }
 
 /**
- * OpenAI API의 컨텍스트 윈도우 초과 에러인지 확인합니다.
+ * API 에러가 대화 trim 후 재시도로 복구 가능한지 확인합니다.
  *
- * 이 함수는 OpenAI API의 공식 에러 코드만을 신뢰하며,
- * 에러 메시지 문자열 매칭은 사용하지 않습니다.
+ * 처리 대상:
+ * - context_length_exceeded: 컨텍스트 윈도우 초과
+ * - 400 error: 잘못된 요청 (대화가 너무 길어서 발생 가능)
  *
  * @param {Error | Object} error - 확인할 에러 객체
- * @returns {boolean} 컨텍스트 윈도우 초과 에러 여부
+ * @returns {boolean} trim 후 재시도 가능 여부
  *
  * @see https://platform.openai.com/docs/guides/error-codes
  */
-export function isContextWindowError(error) {
+export function shouldRetryWithTrim(error) {
     if (!error) return false;
 
     // OpenAI SDK의 공식 에러 코드 확인
-    // error.code 또는 error.error.code에서 확인
     const errorCode = error?.code || error?.error?.code;
 
     if (errorCode === 'context_length_exceeded') {
-        debugLog('[isContextWindowError] Detected: context_length_exceeded');
+        debugLog('[shouldRetryWithTrim] Detected: context_length_exceeded');
         return true;
     }
 
-    // 감지되지 않은 에러 - 디버깅을 위해 로그 남김
+    // 400 에러도 trim 후 재시도 대상
     if (error?.status === 400 || error?.response?.status === 400) {
         const errorType = error?.type || error?.error?.type;
         const errorMessage = error?.message || error?.error?.message || '';
         debugLog(
-            `[isContextWindowError] Not detected - ` +
-            `Status: 400, Type: ${errorType}, Code: ${errorCode}, ` +
+            `[shouldRetryWithTrim] Detected 400 error - ` +
+            `Type: ${errorType}, Code: ${errorCode}, ` +
             `Message: ${errorMessage.substring(0, 200)}`
         );
+        return true;
     }
 
     return false;
