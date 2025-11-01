@@ -27,6 +27,15 @@ export async function performExit(options = {}) {
         await uiEvents.waitForRender();
     }
 
+    // UI 인스턴스 정리 전에 터미널 상태 복구
+    // 이렇게 하면 React cleanup이 실행되지 않아도 터미널 상태가 복구됨
+    if (process.stdout && process.stdout.write) {
+        // 커서 표시 복구 (App.js:447과 동일)
+        process.stdout.write('\x1B[?25h');
+        // Line wrapping 복구 (index.js:54와 동일)
+        process.stdout.write('\x1b[?7h');
+    }
+
     // UI 인스턴스 정리
     if (uiInstance) {
         uiInstance.unmount();
