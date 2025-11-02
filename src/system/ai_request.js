@@ -209,7 +209,20 @@ export async function request(taskName, requestPayload) {
             if (type !== 'function_call_output') continue;
             const parsedOutput = JSON.parse(output);
             if (!isValidJSON(parsedOutput.stdout)) {
-                msg.output = parsedOutput.stdout;
+                // stdout와 stderr를 모두 포함하는 형식으로 변환
+                const hasStdout = parsedOutput.stdout;
+                const hasStderr = parsedOutput.stderr;
+
+                if (hasStdout && hasStderr) {
+                    // 둘 다 있으면 레이블 포함
+                    msg.output = `stdout:\n${parsedOutput.stdout}\n\nstderr:\n${parsedOutput.stderr}`;
+                } else if (hasStderr) {
+                    // stderr만 있으면 레이블 포함
+                    msg.output = `stderr:\n${parsedOutput.stderr}`;
+                } else {
+                    // stdout만 있으면 레이블 없이
+                    msg.output = parsedOutput.stdout;
+                }
             } else {
                 parsedOutput.stdout = JSON.parse(parsedOutput.stdout);
                 if (parsedOutput.original_result) {
