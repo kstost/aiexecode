@@ -495,16 +495,13 @@ uiEvents.emit('loading:task_add', {
 });
 
 // UI가 준비된 후 비동기 초기화 이벤트 발생 (Promise가 이미 완료된 경우에도 처리됨)
+// 첫 번째 catch에서 null을 반환하므로 항상 resolved 상태로 then이 실행됨
 versionCheckPromise.then(info => {
     uiEvents.emit('version:update', { updateInfo: info });
-}).catch(() => {
-    uiEvents.emit('version:update', { updateInfo: null });
 });
 
 mcpInitPromise.then(integration => {
     uiEvents.emit('mcp:initialized', { integration });
-}).catch(() => {
-    uiEvents.emit('mcp:initialized', { integration: null });
 });
 
 // 초기 미션이 있으면 자동 실행
