@@ -312,8 +312,8 @@ let mcpIntegration = null;
 let mcpToolFunctions = {};
 let mcpToolSchemas = [];
 
-// MCP 초기화를 백그라운드에서 실행 (이벤트는 UI 시작 후에 발생)
-initializeMCPIntegration(process.cwd()).then(integration => {
+// MCP 초기화를 백그라운드에서 실행하되 Promise만 저장 (이벤트는 UI 시작 후에 발생)
+const mcpInitPromise = initializeMCPIntegration(process.cwd()).then(integration => {
     mcpIntegration = integration;
     mcpToolFunctions = integration ? integration.getToolFunctions() : {};
     mcpToolSchemas = integration ? integration.getToolSchemas() : [];
@@ -325,13 +325,10 @@ initializeMCPIntegration(process.cwd()).then(integration => {
             debugLog(`   - ${server.name}: ${server.toolCount} tool(s) (${server.status})`);
         });
     }
-
-    // MCP 초기화 완료 이벤트 발생
-    uiEvents.emit('mcp:initialized', { integration });
+    return integration;
 }).catch(err => {
     debugLog(`MCP initialization failed: ${err.message}`);
-    // 실패해도 MCP 초기화 완료 이벤트 발생
-    uiEvents.emit('mcp:initialized', { integration: null });
+    return null;
 });
 
 // 커맨드 레지스트리 초기화
@@ -455,22 +452,20 @@ if (shouldContinue) {
     await deleteHistoryFile(process.app_custom.sessionID);
 }
 
-// 버전 체크 (비동기, 백그라운드에서 실행, 이벤트는 UI 시작 후에 발생)
+// 버전 체크 (비동기, 백그라운드에서 실행하되 Promise만 저장, 이벤트는 UI 시작 후에 발생)
 let updateInfo = null;
 
-checkForUpdates(VERSION).then(info => {
+const versionCheckPromise = checkForUpdates(VERSION).then(info => {
     updateInfo = info;
     if (info.updateAvailable) {
         debugLog(`Update available: ${VERSION} → ${info.remoteVersion}`);
     } else {
         debugLog(`No update available (current: ${VERSION})`);
     }
-    // 업데이트 여부와 관계없이 버전 체크 완료 이벤트 발생
-    uiEvents.emit('version:update', { updateInfo: info });
+    return info;
 }).catch(err => {
     debugLog(`Version check failed: ${err.message}`);
-    // 실패해도 버전 체크 완료 이벤트 발생 (Header를 Static으로 만들기 위해)
-    uiEvents.emit('version:update', { updateInfo: null });
+    return null;
 });
 
 // UI 시작
@@ -497,6 +492,19 @@ uiEvents.emit('loading:task_add', {
 uiEvents.emit('loading:task_add', {
     id: 'mcp_init',
     text: 'Initializing MCP servers...'
+});
+
+// UI가 준비된 후 비동기 초기화 이벤트 발생 (Promise가 이미 완료된 경우에도 처리됨)
+versionCheckPromise.then(info => {
+    uiEvents.emit('version:update', { updateInfo: info });
+}).catch(() => {
+    uiEvents.emit('version:update', { updateInfo: null });
+});
+
+mcpInitPromise.then(integration => {
+    uiEvents.emit('mcp:initialized', { integration });
+}).catch(() => {
+    uiEvents.emit('mcp:initialized', { integration: null });
 });
 
 // 초기 미션이 있으면 자동 실행
