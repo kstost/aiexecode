@@ -307,18 +307,32 @@ if (!process.env.OPENAI_API_KEY) {
     process.exit(1);
 }
 
-// MCP Integration 초기화 (현재 작업 디렉토리 기준)
-const mcpIntegration = await initializeMCPIntegration(process.cwd());
-const mcpToolFunctions = mcpIntegration ? mcpIntegration.getToolFunctions() : {};
-const mcpToolSchemas = mcpIntegration ? mcpIntegration.getToolSchemas() : [];
+// MCP Integration 초기화 (백그라운드에서 실행)
+let mcpIntegration = null;
+let mcpToolFunctions = {};
+let mcpToolSchemas = [];
 
-if (mcpIntegration) {
-    const servers = mcpIntegration.getConnectedServers();
-    debugLog(`MCP integration complete: ${servers.length} server(s), ${Object.keys(mcpToolFunctions).length} tool(s)`);
-    servers.forEach(server => {
-        debugLog(`   - ${server.name}: ${server.toolCount} tool(s) (${server.status})`);
-    });
-}
+// MCP 초기화를 백그라운드에서 실행 (이벤트는 UI 시작 후에 발생)
+initializeMCPIntegration(process.cwd()).then(integration => {
+    mcpIntegration = integration;
+    mcpToolFunctions = integration ? integration.getToolFunctions() : {};
+    mcpToolSchemas = integration ? integration.getToolSchemas() : [];
+
+    if (integration) {
+        const servers = integration.getConnectedServers();
+        debugLog(`MCP integration complete: ${servers.length} server(s), ${Object.keys(mcpToolFunctions).length} tool(s)`);
+        servers.forEach(server => {
+            debugLog(`   - ${server.name}: ${server.toolCount} tool(s) (${server.status})`);
+        });
+    }
+
+    // MCP 초기화 완료 이벤트 발생
+    uiEvents.emit('mcp:initialized', { integration });
+}).catch(err => {
+    debugLog(`MCP initialization failed: ${err.message}`);
+    // 실패해도 MCP 초기화 완료 이벤트 발생
+    uiEvents.emit('mcp:initialized', { integration: null });
+});
 
 // 커맨드 레지스트리 초기화
 const commandRegistry = new CommandRegistry();
@@ -441,8 +455,9 @@ if (shouldContinue) {
     await deleteHistoryFile(process.app_custom.sessionID);
 }
 
-// 버전 체크 (비동기, 백그라운드에서 실행)
+// 버전 체크 (비동기, 백그라운드에서 실행, 이벤트는 UI 시작 후에 발생)
 let updateInfo = null;
+
 checkForUpdates(VERSION).then(info => {
     updateInfo = info;
     if (info.updateAvailable) {
@@ -471,6 +486,17 @@ uiInstance = startUI({
     initialHistory,
     reasoningEffort: currentReasoningEffort,
     updateInfo: null // 초기에는 null, 나중에 업데이트됨
+});
+
+// UI가 시작된 후 로딩 태스크 추가
+uiEvents.emit('loading:task_add', {
+    id: 'version_check',
+    text: 'Checking for updates...'
+});
+
+uiEvents.emit('loading:task_add', {
+    id: 'mcp_init',
+    text: 'Initializing MCP servers...'
 });
 
 // 초기 미션이 있으면 자동 실행

@@ -12,6 +12,7 @@ import { SessionSpinner } from './components/SessionSpinner.js';
 import { ConversationItem } from './components/ConversationItem.js';
 import { BlankLine } from './components/BlankLine.js';
 import { TodoList } from './components/TodoList.js';
+import { LoadingIndicator } from './components/LoadingIndicator.js';
 import { useTextBuffer } from './utils/inputBuffer.js';
 import { uiEvents } from '../system/ui_events.js';
 import { getToolDisplayConfig, extractMessageFromArgs, formatToolCall, formatToolResult, getToolDisplayName } from '../system/tool_registry.js';
@@ -20,6 +21,12 @@ import { SetupWizard } from './components/SetupWizard.js';
 import { createDebugLogger } from '../util/debug_log.js';
 
 const debugLog = createDebugLogger('ui_app.log', 'App');
+
+// Loading task IDs
+const LOADING_TASK_IDS = {
+    VERSION_CHECK: 'version_check',
+    MCP_INIT: 'mcp_init'
+};
 
 /**
  * 빈 줄 추가 여부를 결정하는 함수
@@ -321,6 +328,9 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
     const [currentModel, setCurrentModel] = useState(model);
     const [reasoningEffort, setReasoningEffort] = useState(initialReasoningEffort);
     const [updateInfo, setUpdateInfo] = useState(initialUpdateInfo);
+    const [isVersionCheckComplete, setIsVersionCheckComplete] = useState(false);
+    const [isMcpInitComplete, setIsMcpInitComplete] = useState(false);
+    const [loadingTasks, setLoadingTasks] = useState([]);
 
     // Memoize terminal width to prevent re-renders on stdout changes
     const terminalWidth = useMemo(() => stdout.columns || 80, [stdout.columns]);
@@ -899,6 +909,27 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
                 });
                 return [headerElement, ...prevItems];
             });
+
+            // 버전 체크 완료 표시 및 로딩 태스크에서 제거
+            setIsVersionCheckComplete(true);
+            setLoadingTasks(prev => prev.filter(task => task.id !== LOADING_TASK_IDS.VERSION_CHECK));
+        };
+
+        const handleMcpInitialized = (event) => {
+            debugLog(`[handleMcpInitialized] MCP initialization complete`);
+            setIsMcpInitComplete(true);
+            setLoadingTasks(prev => prev.filter(task => task.id !== LOADING_TASK_IDS.MCP_INIT));
+        };
+
+        const handleLoadingTaskAdd = (event) => {
+            debugLog(`[handleLoadingTaskAdd] Adding task: ${event.id} - ${event.text}`);
+            setLoadingTasks(prev => {
+                // 중복 방지: 같은 ID가 이미 있으면 추가하지 않음
+                if (prev.some(task => task.id === event.id)) {
+                    return prev;
+                }
+                return [...prev, { id: event.id, text: event.text }];
+            });
         };
 
         uiEvents.on('history:add', handleHistoryAdd);
@@ -910,6 +941,8 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
         uiEvents.on('setup:show', handleSetupShow);
         uiEvents.on('todos:update', handleTodosUpdate);
         uiEvents.on('version:update', handleVersionUpdate);
+        uiEvents.on('mcp:initialized', handleMcpInitialized);
+        uiEvents.on('loading:task_add', handleLoadingTaskAdd);
 
         return () => {
             uiEvents.off('history:add', handleHistoryAdd);
@@ -921,6 +954,8 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
             uiEvents.off('setup:show', handleSetupShow);
             uiEvents.off('todos:update', handleTodosUpdate);
             uiEvents.off('version:update', handleVersionUpdate);
+            uiEvents.off('mcp:initialized', handleMcpInitialized);
+            uiEvents.off('loading:task_add', handleLoadingTaskAdd);
         };
     }, [addToHistory, handleSessionTransition, version]);
 
@@ -982,6 +1017,13 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
                 onComplete: handleSetupComplete,
                 onCancel: handleSetupCancel
             })
+        );
+    }
+
+    // 버전 체크 또는 MCP 초기화가 완료되지 않았으면 로딩 인디케이터 표시
+    if (!isVersionCheckComplete || !isMcpInitComplete) {
+        return React.createElement(Box, { flexDirection: "column", padding: 1 },
+            React.createElement(LoadingIndicator, { tasks: loadingTasks })
         );
     }
 

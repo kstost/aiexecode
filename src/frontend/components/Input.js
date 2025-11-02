@@ -13,8 +13,40 @@ import { uiEvents } from '../../system/ui_events.js';
 import chalk from 'chalk';
 import stringWidth from 'string-width';
 
-function InputPromptComponent({ buffer, onSubmit, onClearScreen, onExit, commands = [], placeholder = '  What should I do?', focus = true, isSessionRunning = false }) {
+// 20개의 placeholder 메시지
+const PLACEHOLDER_MESSAGES = [
+    '  Fix all bugs in the codebase',
+    '  Add unit tests for the API',
+    '  Refactor the authentication module',
+    '  Optimize database queries',
+    '  Implement user profile page',
+    '  Add error handling to services',
+    '  Write documentation for utils',
+    '  Create REST API endpoints',
+    '  Set up CI/CD pipeline',
+    '  Improve code performance',
+    '  Add input validation',
+    '  Implement caching layer',
+    '  Fix linting errors',
+    '  Add logging functionality',
+    '  Create data migration scripts',
+    '  Implement search feature',
+    '  Add authentication middleware',
+    '  Optimize bundle size',
+    '  Update dependencies',
+    '  Add responsive design'
+];
+
+// 무작위 placeholder 선택 함수
+function getRandomPlaceholder() {
+    return PLACEHOLDER_MESSAGES[Math.floor(Math.random() * PLACEHOLDER_MESSAGES.length)];
+}
+
+function InputPromptComponent({ buffer, onSubmit, onClearScreen, onExit, commands = [], placeholder, focus = true, isSessionRunning = false }) {
     const [isExiting, setIsExiting] = useState(false);
+
+    // placeholder가 제공되지 않으면 무작위로 선택 (컴포넌트 마운트 시 한 번만)
+    const defaultPlaceholder = useMemo(() => placeholder || getRandomPlaceholder(), []);
 
     const completionRaw = useCompletion(buffer, commands);
 
@@ -249,12 +281,12 @@ function InputPromptComponent({ buffer, onSubmit, onClearScreen, onExit, command
         },
             React.createElement(Text, { color: theme.brand.light }, '> '),
             React.createElement(Box, { flexGrow: 1, flexDirection: "column" },
-                bufferTextLength === 0 && placeholder
+                bufferTextLength === 0 && defaultPlaceholder
                     ? (focus
                         ? React.createElement(Text, null,
-                            chalk.inverse(placeholder.slice(0, 1)),
-                            React.createElement(Text, { color: theme.text.secondary }, placeholder.slice(1)))
-                        : React.createElement(Text, { color: theme.text.secondary }, placeholder))
+                            chalk.inverse(defaultPlaceholder.slice(0, 1)),
+                            React.createElement(Text, { color: theme.text.secondary }, defaultPlaceholder.slice(1)))
+                        : React.createElement(Text, { color: theme.text.secondary }, defaultPlaceholder))
                     : linesToRender.map((lineText, visualIdxInRenderedSet) => {
                         const isOnCursorLine = focus && visualIdxInRenderedSet === cursorVisualRow;
                         let display = lineText;
