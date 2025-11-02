@@ -865,6 +865,40 @@ edit_file_replace({
 bash({ script: "npm test" })
 ```
 
+## Markdown formatting in responses
+
+**ALWAYS use Markdown** in all text responses. The terminal UI renders rich Markdown formatting.
+
+**Supported features:**
+- Headers: `#` to `####` (H1-H4) - use to structure responses
+- Lists: `-` `*` `+` (unordered), `1.` (ordered) - nestable with indentation
+- Tables: `|` pipes - keep to 3-5 columns for readability
+- Code blocks: ` ```language ` - always include language tag for syntax highlighting
+- Inline: `**bold**` `*italic*` `` `code` `` `~~strike~~` `[link](url)`
+- Horizontal rules: `---` for visual separation
+- Not supported: blockquotes, images, HTML tags
+
+**Formatting requirements:**
+- Structure all responses with headers and lists
+- Use `code` for file names, commands, variable names
+- Use **bold** for important points or status
+- Use tables for structured data comparison
+- Always tag code blocks with language (js, python, bash, etc.)
+
+**Example:**
+```markdown
+## Changes Made
+- Updated authentication with OAuth integration
+- Added 5 new test cases in `auth.test.js`
+
+| File | Status |
+|------|--------|
+| auth.js | **Modified** |
+| config.js | Added |
+
+**Verification:** All tests passing ✓
+```
+
 ## Communication during execution
 
 **response_message: Brief Upcoming Action Guidance**

@@ -173,7 +173,7 @@ function CodeResultDisplay({ item }) {
     );
 }
 
-function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLastInBatch = false }) {
+function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLastInBatch = false, terminalWidth }) {
     const { type, text, operations = [], toolName, toolInput, args } = item;
     const config = getTypeConfig(type);
 
@@ -542,7 +542,7 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
                 bold: config.bold
             }, config.icon),
             React.createElement(Box, { flexDirection: "column", flexGrow: 1 },
-                renderMarkdown(text)
+                renderMarkdown(text, { terminalWidth: terminalWidth || 80 })
             )
         );
     }
@@ -781,6 +781,7 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
     let textContent;
     if (text && typeof text === 'object' && text.type === 'formatted' && Array.isArray(text.parts)) {
         // 구조화된 parts를 렌더링
+        debugLog(`Rendering formatted text with ${text.parts.length} parts`);
         textContent = React.createElement(Box, { flexDirection: "row" },
             ...text.parts.map((part, idx) =>
                 React.createElement(Text, {
@@ -790,8 +791,13 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
                 }, part.text)
             )
         );
+    } else if (type === 'assistant' && typeof text === 'string') {
+        // assistant 응답은 마크다운 렌더링 적용
+        debugLog(`Rendering assistant response with Markdown, text length: ${text.length}, terminalWidth: ${terminalWidth || 80}`);
+        textContent = renderMarkdown(text, { terminalWidth: terminalWidth || 80 });
     } else {
         // 일반 문자열
+        debugLog(`Rendering plain text, type: ${type}, text length: ${typeof text === 'string' ? text.length : 'N/A'}`);
         textContent = React.createElement(Text, {
             color: textColor
         }, text);
@@ -831,7 +837,7 @@ export function ConversationItem({ item, isPending = false, terminalWidth, nextI
     debugLog(`hasFollowingResult: ${hasFollowingResult}`);
     debugLog('Rendering StandardDisplay');
 
-    const result = React.createElement(StandardDisplay, { item, isPending, hasFollowingResult, nextItem, isLastInBatch });
+    const result = React.createElement(StandardDisplay, { item, isPending, hasFollowingResult, nextItem, isLastInBatch, terminalWidth });
 
     return result;
 }
