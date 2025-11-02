@@ -18,18 +18,25 @@ import { theme } from '../design/themeColors.js';
 // d88P     888 8888888 8888888888 d88P   Y88b 8888888888 "Y8888P "Y88P"   "Y88888  "Y8888  
 // `;
 
-export function Header({ version = '1.0.0' }) {
+export function Header({ version = '1.0.0', updateInfo = null }) {
     const ASCII_LOGO = `
-    ▞▀▖▜▘▛▀▘▌ ▌▛▀▘        ▌   
+    ▞▀▖▜▘▛▀▘▌ ▌▛▀▘        ▌
     ▙▄▌▐ ▙▄ ▝▞ ▙▄ ▞▀▖▞▀▖▞▀▌▞▀▖
-    ▌ ▌▐ ▌  ▞▝▖▌  ▌ ▖▌ ▌▌ ▌▛▀ 
+    ▌ ▌▐ ▌  ▞▝▖▌  ▌ ▖▌ ▌▌ ▌▛▀
     ▘ ▘▀▘▀▀▘▘ ▘▀▀▘▝▀ ▝▀ ▝▀▘▝▀▘
     by 코드깎는노인
     `.split('\n').map(line => line.trim()).join("\n");
     return React.createElement(Box, { flexDirection: "column", marginBottom: 1, marginLeft: 2 },
         React.createElement(Text, { color: theme.brand.light }, ASCII_LOGO),
         React.createElement(Box, { justifyContent: "flex-left" },
-            React.createElement(Text, { color: theme.text.secondary }, `AIEXEcode v${version}`)
+            React.createElement(Text, { color: theme.text.secondary }, `AIEXEcode v${version}`),
+            updateInfo && updateInfo.updateAvailable && React.createElement(Text, null,
+                React.createElement(Text, { color: '#666666' }, ' → '),
+                React.createElement(Text, { color: theme.status.warning }, `v${updateInfo.remoteVersion}`),
+                React.createElement(Text, null, ' available ('),
+                React.createElement(Text, { color: '#FFD700' }, 'npm install aiexecode -g'),
+                React.createElement(Text, null, ')')
+            )
         )
     );
 }

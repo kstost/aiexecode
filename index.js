@@ -20,6 +20,7 @@ import { performExit } from './src/util/exit_handler.js';
 import { Command } from 'commander';
 import { registerMcpCliCommands } from './src/cli/mcp_cli.js';
 import { createDebugLogger } from './src/util/debug_log.js';
+import { checkForUpdates } from './src/util/version_check.js';
 
 const debugLog = createDebugLogger('index.log', 'index');
 
@@ -440,6 +441,23 @@ if (shouldContinue) {
     await deleteHistoryFile(process.app_custom.sessionID);
 }
 
+// 버전 체크 (비동기, 백그라운드에서 실행)
+let updateInfo = null;
+checkForUpdates(VERSION).then(info => {
+    updateInfo = info;
+    if (info.updateAvailable) {
+        debugLog(`Update available: ${VERSION} → ${info.remoteVersion}`);
+    } else {
+        debugLog(`No update available (current: ${VERSION})`);
+    }
+    // 업데이트 여부와 관계없이 버전 체크 완료 이벤트 발생
+    uiEvents.emit('version:update', { updateInfo: info });
+}).catch(err => {
+    debugLog(`Version check failed: ${err.message}`);
+    // 실패해도 버전 체크 완료 이벤트 발생 (Header를 Static으로 만들기 위해)
+    uiEvents.emit('version:update', { updateInfo: null });
+});
+
 // UI 시작
 const currentModel = await getModelForProvider();
 const currentReasoningEffort = settings?.OPENAI_REASONING_EFFORT || process.env.OPENAI_REASONING_EFFORT;
@@ -451,7 +469,8 @@ uiInstance = startUI({
     model: currentModel,
     version: VERSION,
     initialHistory,
-    reasoningEffort: currentReasoningEffort
+    reasoningEffort: currentReasoningEffort,
+    updateInfo: null // 초기에는 null, 나중에 업데이트됨
 });
 
 // 초기 미션이 있으면 자동 실행

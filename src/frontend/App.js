@@ -265,8 +265,8 @@ function createItemsWithBlankLines(items, terminalWidth, startKey, keyPrefix = '
 }
 
 // Memoized header component
-const MemoizedHeader = memo(function MemoizedHeader({ version }) {
-    return React.createElement(Header, { version });
+const MemoizedHeader = memo(function MemoizedHeader({ version, updateInfo }) {
+    return React.createElement(Header, { version, updateInfo });
 });
 
 // Memoized footer component
@@ -314,12 +314,13 @@ function formatEventAsText(event) {
 }
 
 // Main app component
-export function App({ onSubmit, onClearScreen, onExit, commands = [], model, version, initialHistory = [], reasoningEffort: initialReasoningEffort = null }) {
+export function App({ onSubmit, onClearScreen, onExit, commands = [], model, version, initialHistory = [], reasoningEffort: initialReasoningEffort = null, updateInfo: initialUpdateInfo = null }) {
     const { stdout } = useStdout();
 
     // Model state for dynamic updates
     const [currentModel, setCurrentModel] = useState(model);
     const [reasoningEffort, setReasoningEffort] = useState(initialReasoningEffort);
+    const [updateInfo, setUpdateInfo] = useState(initialUpdateInfo);
 
     // Memoize terminal width to prevent re-renders on stdout changes
     const terminalWidth = useMemo(() => stdout.columns || 80, [stdout.columns]);
@@ -352,9 +353,7 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
     const [todos, setTodos] = useState([]);
 
     // Static items: 메모이제이션된 React 엘리먼트들 (Static 컴포넌트 제거로 스크롤 문제 해결)
-    const [staticItems, setStaticItems] = useState(() => [
-        React.createElement(MemoizedHeader, { key: 'header', version })
-    ]);
+    const [staticItems, setStaticItems] = useState(() => []);
 
     // initialHistory를 staticItems에 추가 (초기 렌더링 시 한 번만)
     const initialHistoryAddedRef = useRef(false);
@@ -423,16 +422,14 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
     const handleClearScreen = useCallback(() => {
         setHistory([]);
         setPendingHistory([]);
-        // Reset static items to only header
-        setStaticItems([
-            React.createElement(MemoizedHeader, { key: 'header', version })
-        ]);
+        // Reset static items
+        setStaticItems([]);
         // Reset key counter
         staticItemKeyCounter.current = 0;
         if (onClearScreen) {
             onClearScreen();
         }
-    }, [onClearScreen, version]);
+    }, [onClearScreen]);
 
     // Hide terminal cursor to prevent double cursor issue
     useEffect(() => {
@@ -851,10 +848,8 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
         const handleClearScreen = () => {
             setHistory([]);
             setPendingHistory([]);
-            // Reset static items to only header
-            setStaticItems([
-                React.createElement(MemoizedHeader, { key: 'header', version })
-            ]);
+            // Reset static items
+            setStaticItems([]);
             // Reset key counter
             staticItemKeyCounter.current = 0;
         };
@@ -886,6 +881,26 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
             }
         };
 
+        const handleVersionUpdate = (event) => {
+            const info = event.updateInfo;
+            if (info && info.updateAvailable) {
+                debugLog(`[handleVersionUpdate] Update available: ${info.remoteVersion}`);
+            } else {
+                debugLog(`[handleVersionUpdate] No update available or check failed`);
+            }
+
+            // 버전 체크 완료 후 Header를 Static에 추가
+            debugLog(`[handleVersionUpdate] Adding header to static items`);
+            setStaticItems(prevItems => {
+                const headerElement = React.createElement(MemoizedHeader, {
+                    key: 'header-static',
+                    version,
+                    updateInfo: info
+                });
+                return [headerElement, ...prevItems];
+            });
+        };
+
         uiEvents.on('history:add', handleHistoryAdd);
         uiEvents.on('session:state', handleSessionState);
         uiEvents.on('screen:clear', handleClearScreen);
@@ -894,6 +909,7 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
         uiEvents.on('reasoning_effort:changed', handleReasoningEffortChanged);
         uiEvents.on('setup:show', handleSetupShow);
         uiEvents.on('todos:update', handleTodosUpdate);
+        uiEvents.on('version:update', handleVersionUpdate);
 
         return () => {
             uiEvents.off('history:add', handleHistoryAdd);
@@ -904,8 +920,9 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
             uiEvents.off('reasoning_effort:changed', handleReasoningEffortChanged);
             uiEvents.off('setup:show', handleSetupShow);
             uiEvents.off('todos:update', handleTodosUpdate);
+            uiEvents.off('version:update', handleVersionUpdate);
         };
-    }, [addToHistory, handleSessionTransition]);
+    }, [addToHistory, handleSessionTransition, version]);
 
     // 승인 요청 처리
     const handleApprovalDecision = useCallback((decision) => {
@@ -976,7 +993,7 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
             flexShrink: 1,
             overflow: 'hidden'  // Prevent history from pushing out fixed elements
         },
-            // Static items: 한 번 렌더링되면 다시는 재렌더링되지 않음
+            // Static items: Header와 히스토리 포함
             React.createElement(Static, { items: staticItems }, (item) => item)
         ),
 
