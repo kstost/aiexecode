@@ -332,10 +332,71 @@ const mcpInitPromise = initializeMCPIntegration().then(integration => {
     // 초기화 결과 로깅
     if (integration) {
         const servers = integration.getConnectedServers();
-        debugLog(`MCP integration complete: ${servers.length} server(s), ${Object.keys(mcpToolFunctions).length} tool(s)`);
-        servers.forEach(server => {
-            debugLog(`   - ${server.name}: ${server.toolCount} tool(s) (${server.status})`);
-        });
+        debugLog('='.repeat(80));
+        debugLog(`MCP INTEGRATION COMPLETE`);
+        debugLog('='.repeat(80));
+        debugLog(`Total Servers: ${servers.length}`);
+        debugLog(`Total Tools: ${Object.keys(mcpToolFunctions).length}`);
+        debugLog(`Total Schemas: ${mcpToolSchemas.length}`);
+        debugLog('');
+
+        // MCP 서버별 상세 정보
+        if (servers.length > 0) {
+            debugLog('Connected MCP Servers:');
+            debugLog('-'.repeat(80));
+            servers.forEach((server, idx) => {
+                debugLog(`\n[${idx + 1}] ${server.name}`);
+                debugLog(`    Status: ${server.status}`);
+                debugLog(`    Tool Count: ${server.toolCount}`);
+                if (server.transport) {
+                    debugLog(`    Transport: ${JSON.stringify(server.transport, null, 2).split('\n').join('\n    ')}`);
+                }
+                if (server.tools && server.tools.length > 0) {
+                    debugLog(`    Available Tools:`);
+                    server.tools.forEach(tool => {
+                        debugLog(`      - ${tool.name}: ${tool.description || 'No description'}`);
+                    });
+                }
+            });
+            debugLog('');
+        }
+
+        // mcpToolFunctions 구조 로깅
+        if (Object.keys(mcpToolFunctions).length > 0) {
+            debugLog('MCP Tool Functions:');
+            debugLog('-'.repeat(80));
+            Object.keys(mcpToolFunctions).forEach((toolName, idx) => {
+                const func = mcpToolFunctions[toolName];
+                debugLog(`  [${idx + 1}] ${toolName}`);
+                debugLog(`      Type: ${typeof func}`);
+                debugLog(`      Function Name: ${func?.name || 'anonymous'}`);
+            });
+            debugLog('');
+        }
+
+        // mcpToolSchemas 구조 로깅
+        if (mcpToolSchemas.length > 0) {
+            debugLog('MCP Tool Schemas:');
+            debugLog('-'.repeat(80));
+            mcpToolSchemas.forEach((schema, idx) => {
+                debugLog(`  [${idx + 1}] ${schema.name}`);
+                debugLog(`      Description: ${schema.description || 'No description'}`);
+                if (schema.inputSchema) {
+                    const props = schema.inputSchema.properties || {};
+                    const propCount = Object.keys(props).length;
+                    debugLog(`      Input Properties: ${propCount}`);
+                    if (propCount > 0) {
+                        Object.entries(props).forEach(([key, value]) => {
+                            const required = schema.inputSchema.required?.includes(key) ? ' (required)' : '';
+                            debugLog(`        - ${key}: ${value.type || 'unknown'}${required}`);
+                        });
+                    }
+                }
+            });
+            debugLog('');
+        }
+
+        debugLog('='.repeat(80));
     }
     return integration;
 }).catch(err => {
