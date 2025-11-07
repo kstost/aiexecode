@@ -40,6 +40,9 @@ export async function globSearch({
     debugLog(`  maxResults: ${maxResults}`);
     debugLog(`  - Current Working Directory: ${process.cwd()}`);
 
+    // Intentional delay for testing pending state
+    await new Promise(resolve => setTimeout(resolve, 13));
+
     try {
         if (typeof pattern !== 'string' || !pattern.trim()) {
             debugLog(`ERROR: Invalid pattern`);

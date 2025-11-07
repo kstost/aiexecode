@@ -79,11 +79,11 @@ const TYPE_CONFIG = {
     assistant_progress: { icon: '  ', color: theme.text.secondary, bold: false },  // 중간 안내 메시지
     system: { icon: '* ', color: theme.text.secondary, bold: false },
     error: { icon: '✗ ', color: theme.status.error, bold: true },
-    tool: { icon: '⚙ ', color: theme.status.success, bold: false },
-    tool_start: { icon: '⚙ ', color: theme.status.success, bold: true },
+    tool: { icon: '• ', color: theme.status.success, bold: false },
+    tool_start: { icon: '• ', color: theme.status.success, bold: true },
     tool_result: { icon: '  ㄴ', color: theme.text.secondary, bold: false },
     thinking: { icon: '◇ ', color: theme.text.link, bold: false },
-    code_execution: { icon: '▶ ', color: theme.status.warning, bold: false },
+    code_execution: { icon: '• ', color: theme.status.warning, bold: false },
     code_result: { icon: '◀ ', color: theme.status.success, bold: false },
     default: { icon: '• ', color: theme.text.primary, bold: false }
 };
@@ -92,7 +92,7 @@ function getTypeConfig(type) {
     return TYPE_CONFIG[type] || TYPE_CONFIG.default;
 }
 
-function CodeExecutionDisplay({ item, hasFollowingResult, nextItem }) {
+function CodeExecutionDisplay({ item, hasFollowingResult, nextItem, isPending }) {
     const config = getTypeConfig(item.type);
 
     const languageName = item.language.charAt(0).toUpperCase() + item.language.slice(1);
@@ -100,6 +100,19 @@ function CodeExecutionDisplay({ item, hasFollowingResult, nextItem }) {
     // Check if code execution was denied by user
     const resultStderr = item.result?.stderr || nextItem?.stderr;
     const isDenied = resultStderr?.includes('User denied code execution');
+
+    // Blinking icon for pending state
+    const [showIcon, setShowIcon] = useState(true);
+    useEffect(() => {
+        if (isPending) {
+            const interval = setInterval(() => {
+                setShowIcon(prev => !prev);
+            }, 500); // 0.5초 간격으로 깜빡임
+            return () => clearInterval(interval);
+        } else {
+            setShowIcon(true);
+        }
+    }, [isPending]);
 
     /**
      * 간격: marginBottom 항상 0
@@ -109,10 +122,13 @@ function CodeExecutionDisplay({ item, hasFollowingResult, nextItem }) {
      */
     const marginBottom = 0;
 
+    // Pending 상태일 때는 회색, 아니면 기본 색상
+    const iconColor = isPending ? theme.text.secondary : config.color;
+
     if (isDenied) {
         return React.createElement(Box, { flexDirection: "column", marginBottom, marginLeft: 2 },
             React.createElement(Box, { flexDirection: "row", marginBottom: 0 },
-                React.createElement(Text, { color: config.color, bold: true }, config.icon),
+                React.createElement(Text, { color: iconColor, bold: true }, showIcon ? config.icon : '  '),
                 React.createElement(Text, { color: theme.text.primary }, 'Executing '),
                 React.createElement(Text, { color: theme.status.warning, bold: true }, languageName)
             ),
@@ -124,7 +140,7 @@ function CodeExecutionDisplay({ item, hasFollowingResult, nextItem }) {
 
     return React.createElement(Box, { flexDirection: "column", marginBottom, marginLeft: 2 },
         React.createElement(Box, { flexDirection: "row", marginBottom: 0 },
-            React.createElement(Text, { color: config.color, bold: true }, config.icon),
+            React.createElement(Text, { color: iconColor, bold: true }, showIcon ? config.icon : '  '),
             React.createElement(Text, { color: theme.text.primary }, 'Executing '),
             React.createElement(Text, { color: theme.status.warning, bold: true }, languageName),
             // React.createElement(Text, { color: theme.text.primary }, ' code:')
@@ -176,6 +192,19 @@ function CodeResultDisplay({ item }) {
 function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLastInBatch = false, terminalWidth }) {
     const { type, text, operations = [], toolName, toolInput, args } = item;
     const config = getTypeConfig(type);
+
+    // Blinking icon for pending tool_start
+    const [showIcon, setShowIcon] = useState(true);
+    useEffect(() => {
+        if (isPending && type === 'tool_start') {
+            const interval = setInterval(() => {
+                setShowIcon(prev => !prev);
+            }, 500); // 0.5초 간격으로 깜빡임
+            return () => clearInterval(interval);
+        } else {
+            setShowIcon(true);
+        }
+    }, [isPending, type]);
 
     debugLog('---------- StandardDisplay START ----------');
     debugLog(`type: ${type}, toolName: ${toolName || 'N/A'}`);
@@ -727,13 +756,17 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
 
         // Check if this tool was denied by user
         const originalResult = item.result?.originalResult || nextItem?.result?.originalResult;
-        const isDenied = originalResult?.operation_successful === false && 
+        const isDenied = originalResult?.operation_successful === false &&
                         originalResult?.error_message === 'User denied tool execution';
+
+        // Pending 상태일 때는 회색, 아니면 기본 색상
+        const iconColor = isPending ? theme.text.secondary : config.color;
+        const displayIcon = showIcon ? config.icon : '  ';
 
         if (isDenied) {
             return React.createElement(Box, { flexDirection: "column", marginBottom, marginTop, marginLeft: 2 },
                 React.createElement(Box, { flexDirection: "row" },
-                    React.createElement(Text, { color: config.color, bold: config.bold }, config.icon),
+                    React.createElement(Text, { color: iconColor, bold: config.bold }, displayIcon),
                     React.createElement(Text, { color: 'white', bold: true }, displayName)
                 ),
                 React.createElement(Box, { marginLeft: 2, marginTop: 0 },
@@ -744,7 +777,7 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
 
         return React.createElement(Box, { flexDirection: "column", marginBottom, marginTop, marginLeft: 2 },
             React.createElement(Box, { flexDirection: "row" },
-                React.createElement(Text, { color: config.color, bold: config.bold }, config.icon),
+                React.createElement(Text, { color: iconColor, bold: config.bold }, displayIcon),
                 React.createElement(Text, {
                     color: 'white',
                     bold: true
@@ -824,7 +857,7 @@ export function ConversationItem({ item, isPending = false, terminalWidth, nextI
     if (item.type === 'code_execution' && item.code && item.language) {
         const hasFollowingResult = nextItem && nextItem.type === 'code_result';
         debugLog('Rendering CodeExecutionDisplay');
-        return React.createElement(CodeExecutionDisplay, { item, hasFollowingResult, nextItem });
+        return React.createElement(CodeExecutionDisplay, { item, hasFollowingResult, nextItem, isPending });
     }
 
     if (item.type === 'code_result') {

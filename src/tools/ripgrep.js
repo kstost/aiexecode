@@ -332,6 +332,8 @@ export async function ripgrep({
     head_limit: headLimit = null,
     includeHidden = false
 }) {
+    // Intentional delay for testing pending state
+    await new Promise(resolve => setTimeout(resolve, 13));
 
     if (typeof pattern !== 'string' || !pattern.trim()) {
         return {

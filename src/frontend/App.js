@@ -803,7 +803,7 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
                 nextItem
             });
         })
-    , []);
+        , []);
 
     const renderHistoryItem = useCallback((item, index, prefix = 'history', allItems = []) => {
         const nextItem = allItems[index + 1];
@@ -1027,16 +1027,66 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
         );
     }
 
-    return React.createElement(Box, { flexDirection: "column", padding: 1 },
+    return React.createElement(Box, { flexDirection: "column", padding: 0 },
         // History area (grows to fill available space, shrinks when needed)
         React.createElement(Box, {
             flexDirection: "column",
             flexGrow: 1,
             flexShrink: 1,
-            overflow: 'hidden'  // Prevent history from pushing out fixed elements
+            overflow: 'hidden',  // Prevent history from pushing out fixed elements
+            gap: 0  // No gap between children
         },
+            // React.createElement(BlankLine, {
+            //     reason: 'separator between static and dynamic',
+            //     afterType: 'static_area',
+            //     beforeType: 'dynamic_area',
+            //     content: '---DYNAMIC1---'
+            // }),
+
+            // ===== Static 영역 시작 =====
             // Static items: Header와 히스토리 포함
-            React.createElement(Static, { items: staticItems }, (item) => item)
+            React.createElement(Box, { marginBottom: 0, paddingBottom: 0 },
+                React.createElement(Static, { items: staticItems }, (item) => item)
+            ),
+            // ===== Static 영역 끝 =====
+
+            // Static과 Dynamic 사이 구분선
+            // React.createElement(BlankLine, {
+            //     reason: 'separator between static and dynamic',
+            //     afterType: 'static_area',
+            //     beforeType: 'dynamic_area',
+            //     content: '---DYNAMIC2---'
+            // }),
+
+            // ===== Dynamic 영역 시작 =====
+            // Dynamic pending items: 실행 중인 도구들을 즉시 표시
+            pendingHistory.length > 0 && pendingHistory.flatMap((item, index) => {
+                const nextItem = pendingHistory[index + 1];
+                const elements = [
+                    React.createElement(ConversationItem, {
+                        key: `pending-${index}`,
+                        item,
+                        terminalWidth,
+                        nextItem,
+                        isPending: true  // Pending 상태 전달
+                    })
+                ];
+
+                // 각 pending 아이템 뒤에 BlankLine 추가
+                elements.push(
+                    React.createElement(BlankLine, {
+                        key: `pending-blank-${index}`,
+                        reason: 'after pending item',
+                        afterType: item.type,
+                        afterToolName: item.toolName,
+                        beforeType: nextItem ? nextItem.type : null,
+                        content: '　'
+                    })
+                );
+
+                return elements;
+            })
+            // ===== Dynamic 영역 끝 =====
         ),
 
         // Fixed input/control area (does not shrink, stays at bottom)

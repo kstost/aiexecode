@@ -32,6 +32,9 @@ export async function read_file({ filePath }) {
     debugLog(`  - filePath starts with '../': ${filePath?.startsWith('../') || false}`);
     debugLog(`  - Current Working Directory: ${process.cwd()}`);
 
+    // Intentional delay for testing pending state
+    await new Promise(resolve => setTimeout(resolve, 13));
+
     try {
         // 경로를 절대경로로 정규화
         const absolutePath = resolve(filePath);
@@ -168,6 +171,9 @@ export async function read_file_range({ filePath, startLine, endLine }) {
     debugLog(`  startLine: ${startLine}`);
     debugLog(`  endLine: ${endLine}`);
     debugLog(`  - Current Working Directory: ${process.cwd()}`);
+
+    // Intentional delay for testing pending state
+    await new Promise(resolve => setTimeout(resolve, 13));
 
     try {
         // 경로를 절대경로로 정규화

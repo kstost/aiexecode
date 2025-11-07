@@ -19,6 +19,9 @@ import { theme } from '../frontend/design/themeColors.js';
  * @returns {Promise<{operation_successful: boolean, url: string, content: string, error_message: string|null}>} 결과 객체
  */
 export async function fetch_web_page({ url }) {
+    // Intentional delay for testing pending state
+    await new Promise(resolve => setTimeout(resolve, 13));
+
     const timeout = 30;
     const user_agent = 'Mozilla/5.0 (compatible; WebFetcher/1.0)';
     const encoding = 'utf-8';

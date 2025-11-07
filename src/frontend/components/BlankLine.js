@@ -47,14 +47,16 @@ import { createDebugLogger } from '../../util/debug_log.js';
 
 const debugLog = createDebugLogger('ui_components.log', 'BlankLine');
 
-export function BlankLine({ reason, afterType, afterToolName, beforeType }) {
+export function BlankLine({ reason, afterType, afterToolName, beforeType, content = '　' }) {
+    // if (content === '　') content = 'aaaaa';
     // 디버그 모드에서만 빈 줄 정보 로깅
     React.useEffect(() => {
-        debugLog(`[BlankLine] Rendered - reason: ${reason}, after: ${afterType}${afterToolName ? `(${afterToolName})` : ''}, before: ${beforeType || 'N/A'}`);
+        debugLog(`[BlankLine] Rendered - reason: ${reason}, after: ${afterType}${afterToolName ? `(${afterToolName})` : ''}, before: ${beforeType || 'N/A'}, content: ${content}`);
     }, []);
 
     // 빈 줄은 공백 문자를 포함한 Text로 렌더링
     // Ink의 flexDirection: 'column'에서 각 컴포넌트는 한 줄씩 차지하므로
     // Text(' ')는 한 줄의 빈 줄로 렌더링됨
-    return React.createElement(Text, null, '　');
+    // content prop으로 표시할 내용을 커스터마이징 가능
+    return React.createElement(Text, null, content);
 }

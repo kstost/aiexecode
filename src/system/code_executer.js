@@ -225,6 +225,9 @@ export async function execPythonCode(python_code, args = [], timeoutMs = 1200000
     debugLog(`[execPythonCode] Args: ${JSON.stringify(args)}`);
     debugLog(`[execPythonCode] Timeout: ${timeoutMs}ms`);
 
+    // Intentional delay for testing pending state
+    await new Promise(resolve => setTimeout(resolve, 13));
+
     debugLog(`[execPythonCode] Creating/checking virtual environment...`);
     const venvPath = await makePythonVirtualEnv(process.env.PYTHON_VENV_PATH || "venv");
 
@@ -328,6 +331,9 @@ export async function execShellScript(script, timeoutMs = 1200000) {
     debugLog(`[execShellScript] Script length: ${script.length} characters`);
     debugLog(`[execShellScript] Script preview (first 200 chars): ${script.substring(0, 200)}${script.length > 200 ? '...' : ''}`);
     debugLog(`[execShellScript] Timeout: ${timeoutMs}ms`);
+
+    // Intentional delay for testing pending state
+    await new Promise(resolve => setTimeout(resolve, 13));
 
     debugLog(`[execShellScript] Finding shell executable...`);
     let shellPath = await whichCommand("bash") || await whichCommand("sh");
