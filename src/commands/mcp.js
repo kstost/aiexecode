@@ -48,14 +48,15 @@ export default {
  * 연결된 모든 MCP 서버 목록을 간략하게 표시
  */
 function showServerList(servers) {
-    let output = '\nMCP Servers:\n\n';
+    let output = '# MCP Servers\n\n';
 
     servers.forEach(server => {
-        const status = server.status === 'connected' ? 'Connected' : 'Disconnected';
-        output += `  ${server.name} (${status}, ${server.toolCount} tools)\n`;
+        const statusIcon = server.status === 'connected' ? '✓' : '✗';
+        const statusText = server.status === 'connected' ? 'Connected' : 'Disconnected';
+        output += `- **${server.name}** ${statusIcon} ${statusText} • ${server.toolCount} tools\n`;
     });
 
-    output += '\nUse: /mcp <server-name> to see tools';
+    output += '\n> Use `/mcp <server-name>` to see tools';
 
     uiEvents.addSystemMessage(output);
 }
@@ -82,20 +83,23 @@ function showServerDetail(mcpIntegration, servers, serverName) {
         return match && match[1] === serverName;
     });
 
-    let output = `\n${server.name}\n\n`;
-    output += `Status: ${server.status === 'connected' ? 'Connected' : 'Disconnected'}\n`;
-    output += `Tools: ${serverTools.length}\n\n`;
+    const statusIcon = server.status === 'connected' ? '✓' : '✗';
+    const statusText = server.status === 'connected' ? 'Connected' : 'Disconnected';
+
+    let output = `# ${server.name}\n\n`;
+    output += `**Status:** ${statusIcon} ${statusText}\n`;
+    output += `**Tools:** ${serverTools.length}\n\n`;
 
     if (serverTools.length > 0) {
-        output += 'Available Tools:\n\n';
+        output += '## Available Tools\n\n';
 
         serverTools.forEach((tool, idx) => {
             // 도구 설명에서 "[서버이름 MCP] - " 접두사 제거
             const desc = tool.description?.replace(/^\[.+?\] - /, '') || '';
-            output += `${idx + 1}. ${tool.name}\n`;
+            output += `### ${idx + 1}. \`${tool.name}\`\n\n`;
 
             if (desc) {
-                output += `   ${desc}\n`;
+                output += `${desc}\n\n`;
             }
 
             // 도구의 파라미터 정보 표시
@@ -108,10 +112,10 @@ function showServerDetail(mcpIntegration, servers, serverName) {
                 const optionalParams = paramNames.filter(p => !required.includes(p));
 
                 if (requiredParams.length > 0) {
-                    output += `   Required: ${requiredParams.join(', ')}\n`;
+                    output += `**Required:** \`${requiredParams.join('`, `')}\`\n`;
                 }
                 if (optionalParams.length > 0) {
-                    output += `   Optional: ${optionalParams.join(', ')}\n`;
+                    output += `**Optional:** \`${optionalParams.join('`, `')}\`\n`;
                 }
             }
 

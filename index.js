@@ -350,12 +350,17 @@ const mcpInitPromise = initializeMCPIntegration().then(integration => {
 // 사용자가 입력하는 슬래시 커맨드들(/mcp, /exit 등)을 관리
 const commandRegistry = new CommandRegistry();
 
-// src/commands/ 디렉토리의 모든 커맨드 파일들을 자동으로 로드하고 등록
-// mcpIntegration을 context로 전달하여 커맨드들이 MCP 서버 정보에 접근할 수 있게 함
-await loadCommands(commandRegistry, {
+// context 객체를 생성 - getter를 사용하여 mcpIntegration을 동적으로 참조
+// 이렇게 하면 나중에 MCP가 초기화되어도 최신 값을 참조할 수 있음
+const commandContext = {
     commandRegistry,
-    mcpIntegration  // /mcp 커맨드에서 서버 상태 조회 시 사용
-});
+    get mcpIntegration() {
+        return mcpIntegration;  // 현재 mcpIntegration 값을 반환 (null이거나 초기화된 값)
+    }
+};
+
+// src/commands/ 디렉토리의 모든 커맨드 파일들을 자동으로 로드하고 등록
+await loadCommands(commandRegistry, commandContext);
 
 // 커맨드 목록 준비
 const commandList = Array.from(commandRegistry.commands.entries()).map(([name, cmd]) => ({
