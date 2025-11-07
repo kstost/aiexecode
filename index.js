@@ -307,17 +307,29 @@ if (!process.env.OPENAI_API_KEY) {
     process.exit(1);
 }
 
-// MCP Integration 초기화 (백그라운드에서 실행)
-let mcpIntegration = null;
-let mcpToolFunctions = {};
-let mcpToolSchemas = [];
+// ========================================
+// MCP Integration 초기화
+// ========================================
+// MCP (Model Context Protocol) 서버들과의 연결을 설정하고 사용 가능한 도구 목록을 준비
+// 프로그램 시작 시 백그라운드에서 비동기로 실행되어 UI 로딩을 블로킹하지 않음
 
-// MCP 초기화를 백그라운드에서 실행하되 Promise만 저장 (이벤트는 UI 시작 후에 발생)
+let mcpIntegration = null;      // MCP Integration 인스턴스 (서버 관리 및 도구 실행)
+let mcpToolFunctions = {};      // MCP 도구 실행 함수들 (toolName -> async function)
+let mcpToolSchemas = [];        // MCP 도구 스키마들 (AI 모델에 전달할 도구 정의)
+
+// MCP 초기화를 백그라운드에서 실행
+// Promise만 저장하고 실제 UI 이벤트는 UI 시작 후에 발생시킴
 const mcpInitPromise = initializeMCPIntegration(process.cwd()).then(integration => {
+    // 초기화 성공 시 결과 저장
     mcpIntegration = integration;
+
+    // MCP 도구 실행 함수들을 가져옴 (session.js에서 도구 실행 시 사용)
     mcpToolFunctions = integration ? integration.getToolFunctions() : {};
+
+    // MCP 도구 스키마들을 가져옴 (orchestrator.js에서 AI에게 전달)
     mcpToolSchemas = integration ? integration.getToolSchemas() : [];
 
+    // 초기화 결과 로깅
     if (integration) {
         const servers = integration.getConnectedServers();
         debugLog(`MCP integration complete: ${servers.length} server(s), ${Object.keys(mcpToolFunctions).length} tool(s)`);
@@ -327,15 +339,22 @@ const mcpInitPromise = initializeMCPIntegration(process.cwd()).then(integration 
     }
     return integration;
 }).catch(err => {
+    // 초기화 실패 시에도 프로그램은 계속 실행 (MCP 없이도 동작)
     debugLog(`MCP initialization failed: ${err.message}`);
     return null;
 });
 
+// ========================================
 // 커맨드 레지스트리 초기화
+// ========================================
+// 사용자가 입력하는 슬래시 커맨드들(/mcp, /exit 등)을 관리
 const commandRegistry = new CommandRegistry();
+
+// src/commands/ 디렉토리의 모든 커맨드 파일들을 자동으로 로드하고 등록
+// mcpIntegration을 context로 전달하여 커맨드들이 MCP 서버 정보에 접근할 수 있게 함
 await loadCommands(commandRegistry, {
     commandRegistry,
-    mcpIntegration
+    mcpIntegration  // /mcp 커맨드에서 서버 상태 조회 시 사용
 });
 
 // 커맨드 목록 준비
@@ -364,13 +383,14 @@ async function handleSubmit(text) {
         return;
     }
 
-    // 세션 실행 (시작/종료 알림 및 저장은 runSession 내부에서 처리)
+    // 세션 실행 (AI Agent의 미션 수행)
+    // 시작/종료 알림 및 저장은 runSession 내부에서 처리
     try {
         await runSession({
-            mission: text,
-            maxIterations: 50,
-            mcpToolSchemas,
-            mcpToolFunctions
+            mission: text,           // 사용자가 입력한 미션
+            maxIterations: 50,       // 최대 반복 횟수
+            mcpToolSchemas,          // AI 모델에 전달할 MCP 도구 스키마들
+            mcpToolFunctions         // 실제 MCP 도구 실행 함수들
         });
     } catch (err) {
         // API 인증 에러 등 세션 실행 중 발생한 에러를 history에 표시
@@ -483,23 +503,34 @@ uiInstance = startUI({
     updateInfo: null // 초기에는 null, 나중에 업데이트됨
 });
 
-// UI가 시작된 후 로딩 태스크 추가
+// ========================================
+// 백그라운드 초기화 태스크 UI 연동
+// ========================================
+// UI가 시작된 후 백그라운드에서 실행 중인 초기화 작업들을 사용자에게 표시
+
+// 버전 체크 로딩 표시
 uiEvents.emit('loading:task_add', {
     id: 'version_check',
     text: 'Checking for updates...'
 });
 
+// MCP 초기화 로딩 표시
 uiEvents.emit('loading:task_add', {
     id: 'mcp_init',
     text: 'Initializing MCP servers...'
 });
 
-// UI가 준비된 후 비동기 초기화 이벤트 발생 (Promise가 이미 완료된 경우에도 처리됨)
-// 첫 번째 catch에서 null을 반환하므로 항상 resolved 상태로 then이 실행됨
+// 백그라운드 초기화 완료 시 UI에 이벤트 발생
+// Promise가 이미 완료된 경우에도 then이 실행되어 UI가 업데이트됨
+// catch에서 null을 반환하므로 항상 resolved 상태로 then이 실행됨
+
+// 버전 체크 완료 이벤트
 versionCheckPromise.then(info => {
     uiEvents.emit('version:update', { updateInfo: info });
 });
 
+// MCP 초기화 완료 이벤트
+// 이 시점에서 MCP 서버들과의 연결이 완료되고 도구 목록이 준비됨
 mcpInitPromise.then(integration => {
     uiEvents.emit('mcp:initialized', { integration });
 });
@@ -515,7 +546,10 @@ process.on('SIGINT', handleExit);
 // UI가 종료될 때까지 대기
 await uiInstance.waitUntilExit();
 
-// MCP Integration 정리
+// ========================================
+// 프로그램 종료 시 MCP 정리
+// ========================================
+// 모든 MCP 서버와의 연결을 정상적으로 종료하고 리소스 정리
 if (mcpIntegration) {
     await mcpIntegration.cleanup();
 }

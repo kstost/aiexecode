@@ -29,17 +29,17 @@ export class MCPIntegration {
     try {
       debugLog('MCP Integration initializing...');
 
-      // 전역 설정 로드
+      // MCP 서버 설정 파일(~/.aiexe/mcp_config.json)에서 전역 설정 로드
       const mergedServers = await loadMergedMcpConfig();
 
-      // Skip if no MCP servers are configured
+      // MCP 서버가 설정되지 않은 경우 초기화 중단
       if (Object.keys(mergedServers).length === 0) {
         debugLog('No MCP servers configured.');
         debugLog('   Use "aiexecode mcp add" to configure servers.');
         return { success: false, reason: 'no_servers' };
       }
 
-      // 환경 변수 확장
+      // 각 서버 설정의 환경 변수 확장 (${VAR} 형식을 실제 값으로 치환)
       const servers = {};
       for (const [name, config] of Object.entries(mergedServers)) {
         try {
@@ -56,32 +56,35 @@ export class MCPIntegration {
         return { success: false, reason: 'no_valid_servers' };
       }
 
-      // MCP 설정 객체 생성
+      // mcp-agent-lib에 전달할 설정 객체 생성
       const config = {
         mcpServers: servers
       };
 
-      // mcp-agent-lib를 사용하여 MCP Agent 생성
+      // mcp-agent-lib의 createMCPAgent()를 호출하여 MCP Agent 인스턴스 생성
+      // MCP Agent는 여러 MCP 서버와의 연결 및 통신을 관리하는 핵심 객체
       this.mcpAgent = await createMCPAgent({
         logLevel: process.env.MCP_LOG_LEVEL || 'info',
         enableConsoleDebug: process.env.MCP_DEBUG === 'true'
       });
 
-      // MCP Agent 초기화 (서버 연결)
+      // MCP Agent 초기화: 설정된 모든 MCP 서버에 연결 시도
+      // stdio, http, sse 등 다양한 전송 방식을 지원
       await this.mcpAgent.initialize(config);
 
-      // 사용 가능한 도구 목록 가져오기
+      // 연결된 모든 MCP 서버로부터 사용 가능한 도구(tool) 목록 조회
       const availableTools = this.mcpAgent.getAvailableTools();
 
       debugLog(`MCP Agent initialization complete: ${availableTools.length} tool(s) available`);
 
-      // 도구 정보를 맵에 저장
+      // 각 도구를 내부 맵에 저장하고 AI Agent 시스템에 등록
       for (const tool of availableTools) {
-        // Description에 서버 정보를 명확하게 표시 (AI가 서버를 식별할 수 있도록)
+        // AI가 도구의 출처 서버를 명확히 인식할 수 있도록 설명에 서버 이름 추가
         const enhancedDescription = tool.description
           ? `[${tool.server} MCP] - ${tool.description}`
           : `MCP tool from ${tool.server}`;
 
+        // 도구 정보를 mcpTools Map에 저장 (toolName -> { server, schema, execute })
         this.mcpTools.set(tool.name, {
           server: tool.server,
           schema: {
@@ -93,15 +96,16 @@ export class MCPIntegration {
               required: []
             }
           },
+          // 도구 실행 함수: MCP Agent를 통해 실제 MCP 서버에 도구 실행 요청 전송
           execute: async (args) => {
             return await this.mcpAgent.executeTool(tool.name, args);
           }
         });
 
-        // UI 표시 설정 등록
+        // UI 시스템에 MCP 도구 표시 정보 등록
         registerMCPToolDisplay(tool.name, tool.server);
 
-        // 승인 시스템에 MCP 도구 등록
+        // 도구 승인 시스템에 MCP 도구 등록 (사용자 승인 필요 시 처리)
         registerMCPTool(tool.name, tool.server, tool.description || '');
 
         debugLog(`  - ${tool.name} (from ${tool.server})`);
@@ -122,17 +126,20 @@ export class MCPIntegration {
   }
 
   /**
-   * MCP 도구 목록 반환 (기존 toolMap에 통합하기 위한 형식)
+   * MCP 도구 목록을 실행 가능한 함수 형태로 반환
+   * AI Agent의 기존 toolMap에 통합하기 위한 형식
    */
   getToolFunctions() {
     const toolFunctions = {};
 
     for (const [toolName, toolInfo] of this.mcpTools) {
+      // 각 도구에 대한 실행 함수 생성
       toolFunctions[toolName] = async (args) => {
         try {
+          // MCP Agent를 통해 도구 실행 (MCP 프로토콜로 서버와 통신)
           const result = await toolInfo.execute(args);
 
-          // MCP 결과를 기존 시스템 형식으로 변환
+          // MCP 서버의 응답을 AI Agent 시스템의 표준 형식으로 변환
           if (result.success) {
             return {
               operation_successful: true,
@@ -164,20 +171,21 @@ export class MCPIntegration {
   }
 
   /**
-   * MCP 도구 스키마 목록 반환 (Orchestrator에 전달하기 위한 형식)
+   * MCP 도구 스키마 목록을 OpenAI API 형식으로 반환
+   * Orchestrator가 AI 모델에게 사용 가능한 도구 목록을 전달할 때 사용
    */
   getToolSchemas() {
     const schemas = [];
 
     for (const [toolName, toolInfo] of this.mcpTools) {
-      // OpenAI API strict mode 요구사항에 맞게 스키마 변환
+      // MCP 서버가 제공한 inputSchema를 OpenAI function calling 형식으로 변환
       const inputSchema = toolInfo.schema.inputSchema || {};
       const properties = inputSchema.properties || {};
       const originalRequired = inputSchema.required || [];
 
-      // strict: true일 때는 required에 모든 properties 키가 포함되어야 함
-      // 하지만 이는 너무 엄격하므로, strict: false로 설정하거나
-      // additionalProperties: false를 추가하되 required는 원본 유지
+      // OpenAI API의 function calling 스키마 형식으로 변환
+      // strict: true는 모든 properties가 required에 포함되어야 하는 제약이 있어
+      // MCP 도구의 유연성을 위해 strict: false로 설정
       const cleanedSchema = {
         name: toolInfo.schema.name,
         description: toolInfo.schema.description,
@@ -219,12 +227,14 @@ export class MCPIntegration {
   }
 
   /**
-   * MCP Agent 정리 (프로그램 종료 시 호출)
+   * MCP Agent 정리 및 모든 서버 연결 종료
+   * 프로그램 종료 시 호출되어 리소스를 정리
    */
   async cleanup() {
     if (this.mcpAgent) {
       try {
-        // mcp-agent-lib는 cleanup() 메서드를 사용
+        // mcp-agent-lib 버전에 따라 cleanup() 또는 disconnect() 메서드 호출
+        // 모든 MCP 서버와의 연결을 정상적으로 종료
         if (typeof this.mcpAgent.cleanup === 'function') {
           await this.mcpAgent.cleanup();
         } else if (typeof this.mcpAgent.disconnect === 'function') {
