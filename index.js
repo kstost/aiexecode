@@ -164,7 +164,7 @@ if (viewerMode) {
     console.log(chalk.green(`✓ Payload viewer is running`));
     console.log(chalk.yellow(`Press Ctrl+C to stop the server`));
     // Keep process alive
-    await new Promise(() => {});
+    await new Promise(() => { });
 }
 
 // 전역 설정
@@ -175,7 +175,7 @@ process.app_custom.__dirname = dirname(fileURLToPath(import.meta.url));
 // (글로벌 설치 후 aiexecode 명령으로 실행 시에는 다른 경로에서 실행됨)
 const packageJsonPath = join(process.app_custom.__dirname, 'package.json');
 const isDevelopment = existsSync(packageJsonPath) &&
-                      process.app_custom.__dirname === dirname(fileURLToPath(import.meta.url));
+    process.app_custom.__dirname === dirname(fileURLToPath(import.meta.url));
 process.env.IS_DEVELOPMENT = isDevelopment ? 'true' : 'false';
 
 // Session ID 생성 함수 (16자리 hex)
@@ -319,7 +319,7 @@ let mcpToolSchemas = [];        // MCP 도구 스키마들 (AI 모델에 전달�
 
 // MCP 초기화를 백그라운드에서 실행
 // Promise만 저장하고 실제 UI 이벤트는 UI 시작 후에 발생시킨다
-const mcpInitPromise = initializeMCPIntegration().then(integration => {
+const mcpInitPromise = initializeMCPIntegration().then(async integration => {
     // 초기화 성공 시 결과 저장
     mcpIntegration = integration;
 
@@ -332,71 +332,84 @@ const mcpInitPromise = initializeMCPIntegration().then(integration => {
     // 초기화 결과 로깅
     if (integration) {
         const servers = integration.getConnectedServers();
-        debugLog('='.repeat(80));
-        debugLog(`MCP INTEGRATION COMPLETE`);
-        debugLog('='.repeat(80));
-        debugLog(`Total Servers: ${servers.length}`);
-        debugLog(`Total Tools: ${Object.keys(mcpToolFunctions).length}`);
-        debugLog(`Total Schemas: ${mcpToolSchemas.length}`);
-        debugLog('');
+        const logLines = [];
+
+        logLines.push('='.repeat(80));
+        logLines.push(`MCP INTEGRATION COMPLETE`);
+        logLines.push(`Timestamp: ${new Date().toISOString()}`);
+        logLines.push('='.repeat(80));
+        logLines.push(`Total Servers: ${servers.length}`);
+        logLines.push(`Total Tools: ${Object.keys(mcpToolFunctions).length}`);
+        logLines.push(`Total Schemas: ${mcpToolSchemas.length}`);
+        logLines.push('');
 
         // MCP 서버별 상세 정보
         if (servers.length > 0) {
-            debugLog('Connected MCP Servers:');
-            debugLog('-'.repeat(80));
+            logLines.push('Connected MCP Servers:');
+            logLines.push('-'.repeat(80));
             servers.forEach((server, idx) => {
-                debugLog(`\n[${idx + 1}] ${server.name}`);
-                debugLog(`    Status: ${server.status}`);
-                debugLog(`    Tool Count: ${server.toolCount}`);
+                logLines.push(`\n[${idx + 1}] ${server.name}`);
+                logLines.push(`    Status: ${server.status}`);
+                logLines.push(`    Tool Count: ${server.toolCount}`);
                 if (server.transport) {
-                    debugLog(`    Transport: ${JSON.stringify(server.transport, null, 2).split('\n').join('\n    ')}`);
+                    logLines.push(`    Transport: ${JSON.stringify(server.transport, null, 2).split('\n').join('\n    ')}`);
                 }
                 if (server.tools && server.tools.length > 0) {
-                    debugLog(`    Available Tools:`);
+                    logLines.push(`    Available Tools:`);
                     server.tools.forEach(tool => {
-                        debugLog(`      - ${tool.name}: ${tool.description || 'No description'}`);
+                        logLines.push(`      - ${tool.name}: ${tool.description || 'No description'}`);
                     });
                 }
             });
-            debugLog('');
+            logLines.push('');
         }
 
         // mcpToolFunctions 구조 로깅
         if (Object.keys(mcpToolFunctions).length > 0) {
-            debugLog('MCP Tool Functions:');
-            debugLog('-'.repeat(80));
+            logLines.push('MCP Tool Functions:');
+            logLines.push('-'.repeat(80));
             Object.keys(mcpToolFunctions).forEach((toolName, idx) => {
                 const func = mcpToolFunctions[toolName];
-                debugLog(`  [${idx + 1}] ${toolName}`);
-                debugLog(`      Type: ${typeof func}`);
-                debugLog(`      Function Name: ${func?.name || 'anonymous'}`);
+                logLines.push(`  [${idx + 1}] ${toolName}`);
+                logLines.push(`      Type: ${typeof func}`);
+                logLines.push(`      Function Name: ${func?.name || 'anonymous'}`);
             });
-            debugLog('');
+            logLines.push('');
         }
 
         // mcpToolSchemas 구조 로깅
         if (mcpToolSchemas.length > 0) {
-            debugLog('MCP Tool Schemas:');
-            debugLog('-'.repeat(80));
+            logLines.push('MCP Tool Schemas:');
+            logLines.push('-'.repeat(80));
             mcpToolSchemas.forEach((schema, idx) => {
-                debugLog(`  [${idx + 1}] ${schema.name}`);
-                debugLog(`      Description: ${schema.description || 'No description'}`);
+                logLines.push(`  [${idx + 1}] ${schema.name}`);
+                logLines.push(`      Description: ${schema.description || 'No description'}`);
                 if (schema.inputSchema) {
                     const props = schema.inputSchema.properties || {};
                     const propCount = Object.keys(props).length;
-                    debugLog(`      Input Properties: ${propCount}`);
+                    logLines.push(`      Input Properties: ${propCount}`);
                     if (propCount > 0) {
                         Object.entries(props).forEach(([key, value]) => {
                             const required = schema.inputSchema.required?.includes(key) ? ' (required)' : '';
-                            debugLog(`        - ${key}: ${value.type || 'unknown'}${required}`);
+                            logLines.push(`        - ${key}: ${value.type || 'unknown'}${required}`);
                         });
                     }
                 }
             });
-            debugLog('');
+            logLines.push('');
         }
 
-        debugLog('='.repeat(80));
+        logLines.push('='.repeat(80));
+
+        // 별도 파일에 기록 (createDebugLogger 사용)
+        const mcpLogger = createDebugLogger('mcp_initialization.log', 'MCP');
+        logLines.forEach(line => mcpLogger(line));
+
+        // 기존 디버그 로그에도 간략하게 출력
+        debugLog(`MCP integration complete: ${servers.length} server(s), ${Object.keys(mcpToolFunctions).length} tool(s)`);
+        servers.forEach(server => {
+            debugLog(`   - ${server.name}: ${server.toolCount} tool(s) (${server.status})`);
+        });
     }
     return integration;
 }).catch(err => {
