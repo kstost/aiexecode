@@ -334,10 +334,9 @@ const mcpInitPromise = initializeMCPIntegration().then(async integration => {
         const servers = integration.getConnectedServers();
         const logLines = [];
 
-        logLines.push('='.repeat(80));
+        logLines.push('');
         logLines.push(`MCP INTEGRATION COMPLETE`);
         logLines.push(`Timestamp: ${new Date().toISOString()}`);
-        logLines.push('='.repeat(80));
         logLines.push(`Total Servers: ${servers.length}`);
         logLines.push(`Total Tools: ${Object.keys(mcpToolFunctions).length}`);
         logLines.push(`Total Schemas: ${mcpToolSchemas.length}`);
@@ -346,7 +345,6 @@ const mcpInitPromise = initializeMCPIntegration().then(async integration => {
         // MCP 서버별 상세 정보
         if (servers.length > 0) {
             logLines.push('Connected MCP Servers:');
-            logLines.push('-'.repeat(80));
             servers.forEach((server, idx) => {
                 if (idx > 0) logLines.push('');
                 logLines.push(`[${idx + 1}] ${server.name}`);
@@ -368,7 +366,6 @@ const mcpInitPromise = initializeMCPIntegration().then(async integration => {
         // mcpToolFunctions 구조 로깅
         if (Object.keys(mcpToolFunctions).length > 0) {
             logLines.push('MCP Tool Functions:');
-            logLines.push('-'.repeat(80));
             Object.keys(mcpToolFunctions).forEach((toolName, idx) => {
                 const func = mcpToolFunctions[toolName];
                 logLines.push(`  [${idx + 1}] ${toolName}`);
@@ -381,7 +378,6 @@ const mcpInitPromise = initializeMCPIntegration().then(async integration => {
         // mcpToolSchemas 구조 로깅
         if (mcpToolSchemas.length > 0) {
             logLines.push('MCP Tool Schemas:');
-            logLines.push('-'.repeat(80));
             mcpToolSchemas.forEach((schema, idx) => {
                 logLines.push(`  [${idx + 1}] ${schema.name}`);
                 logLines.push(`      Description: ${schema.description || 'No description'}`);
@@ -399,8 +395,6 @@ const mcpInitPromise = initializeMCPIntegration().then(async integration => {
             });
             logLines.push('');
         }
-
-        logLines.push('='.repeat(80));
 
         // 별도 파일에 기록 (createDebugLogger 사용)
         const mcpLogger = createDebugLogger('mcp_initialization.log', 'MCP');
