@@ -129,14 +129,17 @@ export async function listMcpServers() {
             const config = servers[name];
 
             console.log(chalk.bold(`  ${name}`));
-            console.log(chalk.gray(`    Type: ${config.type}`));
 
-            if (config.type === 'stdio') {
+            // command가 있으면 stdio 타입으로 간주
+            if (config.command) {
+                console.log(chalk.gray(`    Type: ${config.type || 'stdio'}`));
                 console.log(chalk.gray(`    Command: ${config.command} ${config.args?.join(' ') || ''}`));
                 if (config.env && Object.keys(config.env).length > 0) {
                     console.log(chalk.gray(`    Env vars: ${Object.keys(config.env).join(', ')}`));
                 }
             } else {
+                // url이 있으면 http/sse 타입
+                console.log(chalk.gray(`    Type: ${config.type || 'http'}`));
                 console.log(chalk.gray(`    URL: ${config.url}`));
                 if (config.headers) {
                     console.log(chalk.gray(`    Headers: ${Object.keys(config.headers).join(', ')}`));
