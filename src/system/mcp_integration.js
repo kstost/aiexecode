@@ -15,8 +15,7 @@ const debugLog = createDebugLogger('mcp_integration.log', 'mcp_integration');
  */
 
 export class MCPIntegration {
-  constructor(projectRoot = process.cwd()) {
-    this.projectRoot = projectRoot;
+  constructor() {
     this.mcpAgent = null;
     this.isInitialized = false;
     this.mcpTools = new Map(); // toolName -> { server, schema, execute }
@@ -251,8 +250,8 @@ export class MCPIntegration {
 /**
  * 전역 MCP Integration 인스턴스 생성 헬퍼
  */
-export async function initializeMCPIntegration(projectRoot = process.cwd()) {
-  const integration = new MCPIntegration(projectRoot);
+export async function initializeMCPIntegration() {
+  const integration = new MCPIntegration();
   const result = await integration.initialize();
 
   // 서버가 없어도 객체는 반환 (빈 서버 목록으로 동작)

@@ -318,8 +318,8 @@ let mcpToolFunctions = {};      // MCP 도구 실행 함수들 (toolName -> asyn
 let mcpToolSchemas = [];        // MCP 도구 스키마들 (AI 모델에 전달할 도구 정의)
 
 // MCP 초기화를 백그라운드에서 실행
-// Promise만 저장하고 실제 UI 이벤트는 UI 시작 후에 발생시킴
-const mcpInitPromise = initializeMCPIntegration(process.cwd()).then(integration => {
+// Promise만 저장하고 실제 UI 이벤트는 UI 시작 후에 발생시킨다
+const mcpInitPromise = initializeMCPIntegration().then(integration => {
     // 초기화 성공 시 결과 저장
     mcpIntegration = integration;
 
