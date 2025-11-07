@@ -9,22 +9,36 @@
  * @author AI Agent Library Team
  */
 
+// Node.js 이벤트 시스템 - 서버 연결/해제 등의 이벤트를 외부로 발행하기 위해 사용
 import { EventEmitter } from 'events';
+// MCP SDK의 핵심 클라이언트 - 실제 MCP 프로토콜 통신 담당
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+// Stdio 전송: 로컬 프로세스를 spawn하여 stdin/stdout으로 통신
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+// SSE 전송: Server-Sent Events 기반 HTTP 스트리밍 통신
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+// HTTP 전송: 일반 HTTP/HTTPS 요청-응답 기반 통신
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
+// 내부 디버그용 로그 함수 - 실제로는 아무 작업도 하지 않음 (성능 최적화)
 function consolelog() { }
+
 /**
- * AI Agent를 위한 고도화된 MCP 클라이언트
- * SDK 기반 통합 구현체
+ * MCPAgentClient - MCP 서버들과 통신하는 메인 클라이언트 클래스
+ *
+ * 주요 기능:
+ * - 여러 MCP 서버에 동시 연결 (stdio/HTTP/SSE 방식 지원)
+ * - Tool 실행, Resource 읽기, Prompt 가져오기 등 MCP 기능 제공
+ * - 자동 재시도, 에러 핸들링, 보안 검증 내장
+ * - 이벤트 기반 상태 알림 (연결/해제/에러)
  */
 export class MCPAgentClient extends EventEmitter {
   constructor(options = {}) {
     super();
 
-    // 통합된 설정 옵션 - Environment-driven configuration with safe parsing
+    // 클라이언트 설정 초기화
+    // 환경변수(process.env.MCP_*)와 options 매개변수를 병합하여 우선순위 적용
+    // 타임아웃, 재시도, 로깅, 보안 정책 등 모든 동작 방식을 제어
     this.options = {
       autoConnect: options.autoConnect ?? true,
       logLevel: options.logLevel || process.env.MCP_LOG_LEVEL || 'info',
@@ -41,24 +55,33 @@ export class MCPAgentClient extends EventEmitter {
       maxJsonSize: MCPAgentClient._safeParseInt(process.env.MCP_MAX_JSON_SIZE || options.maxJsonSize, 10 * 1024 * 1024),
       serverReadyTimeout: MCPAgentClient._safeParseInt(process.env.MCP_SERVER_READY_TIMEOUT || options.serverReadyTimeout, 10000),
       serverReadyRetries: MCPAgentClient._safeParseInt(process.env.MCP_SERVER_READY_RETRIES || options.serverReadyRetries, 5),
-      // Security configuration (no hardcoding)
+
+      // 보안 설정: stdio 서버에서 실행 가능한 명령어 화이트리스트
       allowedCommands: ['node', 'python', 'python3', 'npx', 'deno'],
+
+      // 보안 설정: 명령 인자에서 금지되는 셸 특수문자 (command injection 방지)
       dangerousChars: ['&', ';', '|', '`', '$', '>', '<', '*', '?'],
+
+      // 응답 파싱: JSON으로 파싱하지 않을 응답의 시작 패턴들
       responseIndicators: ['✅', '❌', 'Error:', 'Warning:', 'Info:'],
-      // Security patterns (configurable)
+
+      // 보안 설정: 프로토타입 오염 공격 탐지 패턴 (prototype pollution 방지)
       prototypePollutionPatterns: ['__proto__', 'constructor', 'prototype', '["__proto__"]', "['__proto__']", '["constructor"]', "['constructor']", 'Object.prototype', 'Function.prototype', 'Array.prototype'],
-      // Standard client capabilities for all transports
+
+      // MCP 프로토콜: 이 클라이언트가 지원하는 기능들을 서버에 알림
       clientCapabilities: {
         roots: { listChanged: true },
         sampling: {},
         experimental: {}
       },
-      // Standard client info
+
+      // MCP 프로토콜: 클라이언트 식별 정보
       clientInfo: {
         name: process.env.MCP_CLIENT_NAME || 'mcp-agent-lib',
         version: process.env.MCP_CLIENT_VERSION || '1.0.0'
       },
-      // Internationalization
+
+      // 사용자 메시지 템플릿 (다국어 지원용)
       messages: {
         initStart: '🚀 MCP Agent Client 초기화 중...',
         emptyConfig: '⚠️ 빈 설정으로 초기화합니다. 서버를 연결하려면 mcpServers 설정을 제공하세요.',
@@ -83,18 +106,24 @@ export class MCPAgentClient extends EventEmitter {
       ...options
     };
 
-    // 서버 및 클라이언트 관리
+    // 연결된 서버들의 정보 저장소
+    // servers: 서버 메타데이터(이름, 타입, tools, resources, prompts 등)
+    // clients: 실제 MCP SDK Client 인스턴스들
     this.servers = new Map();
     this.clients = new Map();
     this.isInitialized = false;
 
-    // 메모리 관리 - On-demand cleanup only (no dangerous intervals)
+    // 메모리 관리 설정
+    // 연결 해제된 서버 정보를 주기적으로 정리 (interval 대신 on-demand 방식)
     this.memoryCleanupEnabled = options.memoryCleanupEnabled ?? true;
     this.lastCleanupTime = Date.now();
   }
 
   /**
-   * Safe integer parsing with fallback
+   * 정수 파싱 유틸리티
+   *
+   * 환경변수나 설정값을 안전하게 숫자로 변환
+   * 파싱 실패 시 기본값(fallback) 반환
    */
   static _safeParseInt(value, fallback) {
     const parsed = parseInt(value);
@@ -102,7 +131,9 @@ export class MCPAgentClient extends EventEmitter {
   }
 
   /**
-   * Safe float parsing with fallback
+   * 실수 파싱 유틸리티
+   *
+   * _safeParseInt와 동일하지만 소수점 숫자 처리
    */
   static _safeParseFloat(value, fallback) {
     const parsed = parseFloat(value);
@@ -110,7 +141,15 @@ export class MCPAgentClient extends EventEmitter {
   }
 
   /**
-   * Safe JSON stringification with circular reference handling
+   * 안전한 JSON 직렬화
+   *
+   * 문제점:
+   * - 순환 참조가 있는 객체는 JSON.stringify 시 에러 발생
+   * - 함수나 undefined는 JSON으로 변환 불가
+   *
+   * 해결책:
+   * - WeakSet으로 이미 방문한 객체 추적하여 순환 참조 탐지
+   * - 함수와 undefined를 문자열로 표현
    */
   safeJsonStringify(obj, space = null) {
     const seen = new WeakSet();
@@ -121,7 +160,6 @@ export class MCPAgentClient extends EventEmitter {
         }
         seen.add(value);
       }
-      // Handle functions and undefined
       if (typeof value === 'function') {
         return '[Function]';
       }
@@ -133,13 +171,23 @@ export class MCPAgentClient extends EventEmitter {
   }
 
   /**
-   * Safe JSON parsing to prevent injection attacks and prototype pollution
+   * 안전한 JSON 파싱
+   *
+   * 보안 위협:
+   * 1. Prototype Pollution: __proto__, constructor 등을 이용한 공격
+   * 2. JSON Injection: 악의적인 JSON 데이터 삽입
+   *
+   * 보안 대책:
+   * 1. 위험한 패턴 사전 검사 (prototypePollutionPatterns)
+   * 2. 응답 크기 제한 (maxResponseSize)
+   * 3. 파싱 중 위험한 키 제거
+   * 4. 파싱 후 객체를 freeze하여 변경 불가능하게 만듦
    */
   safeJsonParse(text) {
     try {
       if (typeof text !== 'string') return text;
 
-      // Enhanced prototype pollution detection
+      // 1단계: 프로토타입 오염 패턴 사전 검사
       const dangerousPatterns = this.options.prototypePollutionPatterns;
 
       const lowerText = text.toLowerCase();
@@ -153,22 +201,24 @@ export class MCPAgentClient extends EventEmitter {
         }
       }
 
+      // 2단계: 응답 크기 검사 (DoS 공격 방지)
       if (text.length > this.options.maxResponseSize) {
         this.secureLog('warn', this.options.messages.responseSizeExceeds, { size: text.length, limit: this.options.maxResponseSize });
         return text;
       }
 
+      // 3단계: JSON 파싱 with reviver 함수
+      // reviver: 각 key-value 파싱 시 호출되어 위험한 키 필터링
       const parsed = JSON.parse(text, (key, value) => {
-        // Additional key validation during parsing
         if (typeof key === 'string' && this.options.prototypePollutionPatterns.includes(key)) {
           this.secureLog('warn', this.options.messages.dangerousKey, { key });
-          return undefined; // Remove dangerous keys
+          return undefined;
         }
         return value;
       });
 
+      // 4단계: 파싱된 객체를 재귀적으로 freeze (불변성 보장)
       if (parsed && typeof parsed === 'object') {
-        // Recursively freeze objects to prevent mutation
         this.deepFreeze(parsed);
       }
       return parsed;
@@ -179,7 +229,11 @@ export class MCPAgentClient extends EventEmitter {
   }
 
   /**
-   * Deep freeze objects recursively to prevent mutation
+   * 객체 재귀적 동결
+   *
+   * Object.freeze()는 얕은 동결만 수행
+   * 이 메서드는 중첩된 모든 객체를 재귀적으로 동결하여
+   * 파싱된 JSON 데이터의 완전한 불변성 보장
    */
   deepFreeze(obj) {
     if (!obj || typeof obj !== 'object') return obj;
@@ -195,7 +249,10 @@ export class MCPAgentClient extends EventEmitter {
   }
 
   /**
-   * Create standardized MCP error
+   * MCP 표준 에러 생성
+   *
+   * MCP 프로토콜은 JSON-RPC 기반이므로 에러에 code와 data 필드 포함
+   * code: JSON-RPC 에러 코드 (예: -32602 = Invalid params)
    */
   createMCPError(code, message, data = null) {
     const error = new Error(message);
@@ -205,7 +262,12 @@ export class MCPAgentClient extends EventEmitter {
   }
 
   /**
-   * Secure logging
+   * 보안 로깅 시스템
+   *
+   * 기능:
+   * 1. 로그 레벨 필터링 (debug < info < warn < error < silent)
+   * 2. 민감 정보 자동 제거 (sanitizeLogData 호출)
+   * 3. 타임스탬프 자동 추가
    */
   secureLog(level, message, data = {}) {
     if (!this.options.enableLogging) return;
@@ -228,7 +290,11 @@ export class MCPAgentClient extends EventEmitter {
   }
 
   /**
-   * Sanitize log data
+   * 로그 데이터 민감정보 제거
+   *
+   * 보안을 위해 로그에 출력되는 데이터에서 민감 정보 제거:
+   * - auth, token, key, secret, password 등이 포함된 필드는 [REDACTED]로 대체
+   * - 너무 긴 문자열은 잘라내고 [TRUNCATED] 표시
    */
   sanitizeLogData(data) {
     if (!data || typeof data !== 'object') return data;
@@ -251,7 +317,10 @@ export class MCPAgentClient extends EventEmitter {
   }
 
   /**
-   * Debug logging helper
+   * 간단한 로깅 헬퍼
+   *
+   * secureLog와 유사하지만 더 간단한 버전
+   * 이모지 아이콘과 함께 로그 출력
    */
   _log(level, message) {
     const levels = { debug: 0, info: 1, warn: 2, error: 3, silent: 4 };
@@ -274,7 +343,22 @@ export class MCPAgentClient extends EventEmitter {
   }
 
   /**
-   * 간단한 초기화 - JSON 설정 객체로 연결
+   * 클라이언트 초기화
+   *
+   * 설정 객체(config)를 받아서 여러 MCP 서버에 연결
+   *
+   * config 형식:
+   * {
+   *   mcpServers: {
+   *     "서버이름": {
+   *       type: "stdio" | "http" | "sse",
+   *       command: "node",  // stdio만
+   *       args: [...],      // stdio만
+   *       url: "https://...", // http/sse만
+   *       headers: {...}    // http/sse만
+   *     }
+   *   }
+   * }
    */
   async initialize(config = {}) {
     try {
@@ -290,10 +374,11 @@ export class MCPAgentClient extends EventEmitter {
         configuration = config;
       }
 
+      // 설정에 정의된 모든 서버에 연결 시도
       await this.connectFromConfig(configuration);
       this.isInitialized = true;
 
-      // 서버 정보 수집
+      // 연결 성공한 서버들의 정보 정리
       for (const [serverName, serverInfo] of this.servers) {
         if (serverInfo.connected) {
           this.servers.set(serverName, {
@@ -315,7 +400,13 @@ export class MCPAgentClient extends EventEmitter {
   }
 
   /**
-   * Validate server configuration for security
+   * 서버 설정 보안 검증
+   *
+   * 연결 전에 서버 설정이 안전한지 검사:
+   * 1. stdio 서버: 허용된 명령어만 실행 가능한지 확인
+   * 2. stdio 서버: 인자에 위험한 셸 문자가 없는지 확인
+   * 3. http 서버: URL이 http/https 프로토콜인지 확인
+   * 4. 환경변수가 문자열 key-value인지 확인
    */
   validateServerConfig(serverName, serverConfig) {
     if (!serverName || typeof serverName !== 'string') {
@@ -326,15 +417,16 @@ export class MCPAgentClient extends EventEmitter {
       throw new Error('Server config must be an object');
     }
 
-    // Validate command execution for any server that has a command
+    // stdio 서버 보안 검증
     if (serverConfig.command) {
       const allowedCommands = this.options.allowedCommands || ['node', 'python', 'python3', 'npx', 'deno'];
 
+      // 화이트리스트에 없는 명령어는 실행 불가
       if (!allowedCommands.includes(serverConfig.command)) {
         throw new Error(`Command '${serverConfig.command}' is not allowed. Allowed commands: ${allowedCommands.join(', ')}`);
       }
 
-      // Validate arguments to prevent injection
+      // 명령 인자에 셸 특수문자 포함 여부 검사 (command injection 방지)
       if (serverConfig.args && Array.isArray(serverConfig.args)) {
         const dangerousChars = this.options.dangerousChars || ['&', ';', '|', '`', '$', '>', '<', '*', '?'];
         for (const arg of serverConfig.args) {
@@ -344,7 +436,7 @@ export class MCPAgentClient extends EventEmitter {
         }
       }
 
-      // Validate environment variables
+      // 환경변수 형식 검증 (문자열 key-value만 허용)
       if (serverConfig.env && typeof serverConfig.env === 'object') {
         for (const [key, value] of Object.entries(serverConfig.env)) {
           if (typeof key !== 'string' || typeof value !== 'string') {
@@ -354,7 +446,7 @@ export class MCPAgentClient extends EventEmitter {
       }
     }
 
-    // Validate HTTP URLs
+    // HTTP/SSE 서버 URL 검증
     if (serverConfig.type === 'http' && serverConfig.url) {
       try {
         const url = new URL(serverConfig.url);
@@ -371,7 +463,12 @@ export class MCPAgentClient extends EventEmitter {
   }
 
   /**
-   * Connect to all servers defined in configuration
+   * 설정 파일의 모든 서버에 연결
+   *
+   * 각 서버 설정을 순회하며:
+   * 1. 보안 검증 수행
+   * 2. 서버 타입에 맞는 연결 메서드 호출
+   * 3. 연결 실패 시 다른 서버 연결 계속 진행
    */
   async connectFromConfig(config) {
     if (!config || !config.mcpServers) {
@@ -383,13 +480,14 @@ export class MCPAgentClient extends EventEmitter {
 
     for (const [serverName, serverConfig] of Object.entries(config.mcpServers)) {
       try {
-        // Validate configuration before connecting - security validation should fail fast
+        // 보안 검증 먼저 수행 (fail-fast)
         this.validateServerConfig(serverName, serverConfig);
 
         this._log('info', `🔗 Connecting to server: ${serverName}`);
 
         let server;
 
+        // 서버 타입에 따라 적절한 연결 메서드 선택
         if (serverConfig.type === 'http') {
           server = await this.connectToHttpServer(serverName, serverConfig);
         } else if (serverConfig.type === 'sse') {
@@ -404,11 +502,11 @@ export class MCPAgentClient extends EventEmitter {
         results.push({ name: serverName, success: true, server });
 
       } catch (error) {
-        // If this is a security validation error, re-throw immediately
+        // 보안 에러는 즉시 전파 (다른 서버 연결 중단)
         if (error.message.includes('not allowed') || error.message.includes('dangerous characters')) {
           throw error;
         }
-        // For other connection errors, log and continue
+        // 일반 연결 에러는 로그만 남기고 다음 서버 계속 진행
         this._log('error', `❌ Failed to connect to ${serverName}: ${error.message}`);
         results.push({ name: serverName, success: false, error: error.message });
       }
@@ -418,21 +516,33 @@ export class MCPAgentClient extends EventEmitter {
   }
 
   /**
-   * Connect to an MCP server using stdio transport
+   * Stdio 전송 방식으로 MCP 서버 연결
+   *
+   * 동작 방식:
+   * 1. 로컬 프로세스 spawn (예: node server.js)
+   * 2. stdin/stdout을 통해 JSON-RPC 통신
+   * 3. stderr은 에러 로깅용으로 사용
+   *
+   * 주요 단계:
+   * 1. SDK Transport 객체 생성
+   * 2. SDK Client 생성 및 연결
+   * 3. 서버 준비 대기 (_waitForServerReady)
+   * 4. 사용 가능한 tools/resources/prompts 목록 조회
    */
   async connectToStdioServer(serverName, serverConfig) {
     try {
       this._log('info', `🔌 Connecting to STDIO server: ${serverName}`);
 
-      // Create SDK transport with server parameters - SDK will handle spawning
+      // SDK Transport 생성 - SDK가 자동으로 프로세스 spawn
       const transport = new StdioClientTransport({
         command: serverConfig.command,
         args: serverConfig.args || [],
         env: serverConfig.env,
         cwd: serverConfig.cwd,
-        stderr: 'pipe' // Capture stderr for logging
+        stderr: 'pipe'
       });
 
+      // MCP SDK Client 생성
       const client = new Client(
         this.options.clientInfo,
         {
@@ -440,6 +550,7 @@ export class MCPAgentClient extends EventEmitter {
         }
       );
 
+      // 서버 메타데이터 객체 생성
       const server = {
         name: serverName,
         type: 'stdio',
@@ -452,7 +563,7 @@ export class MCPAgentClient extends EventEmitter {
         config: serverConfig
       };
 
-      // Setup stderr logging if available
+      // stderr 스트림 모니터링 설정 (서버 에러 로깅)
       const stderrStream = transport.stderr;
       if (stderrStream) {
         stderrStream.on('data', (data) => {
@@ -465,7 +576,7 @@ export class MCPAgentClient extends EventEmitter {
         });
       }
 
-      // Setup transport event handlers
+      // Transport 이벤트 핸들러 설정 (연결 상태 추적)
       transport.onerror = (error) => {
         this._log('error', `💥 Transport error for ${serverName}: ${error}`);
         this.emit('serverError', serverName, error);
@@ -477,21 +588,21 @@ export class MCPAgentClient extends EventEmitter {
         this.emit('serverDisconnected', serverName);
       };
 
-      // Connect using SDK
+      // MCP 프로토콜 핸드셰이크 수행
       await client.connect(transport);
 
-      // Get server capabilities and info
+      // 서버가 제공하는 기능 정보 가져오기
       server.capabilities = client.getServerCapabilities();
       this._setServerStatus(serverName, 'connected');
 
-      // 서버 정보를 먼저 저장
+      // Map에 저장 (이후 조회 가능하도록)
       this.servers.set(serverName, server);
       this.clients.set(serverName, client);
 
-      // Wait for server to be ready before querying capabilities
+      // 서버가 완전히 준비될 때까지 대기 (재시도 로직 포함)
       await this._waitForServerReady(client, serverName);
 
-      // List available capabilities - 이것이 server 객체를 업데이트함
+      // 사용 가능한 tools/resources/prompts 목록 조회 및 저장
       await this.listServerCapabilities(serverName);
 
       // Log final server statistics without duplicate status setting
@@ -799,14 +910,25 @@ export class MCPAgentClient extends EventEmitter {
   }
 
   /**
-   * 도구 실행 - 자동으로 적절한 서버 찾아서 실행
+   * Tool 실행 (고수준 API)
+   *
+   * Tool 이름만으로 자동 실행:
+   * 1. Tool을 제공하는 서버 자동 검색
+   * 2. 해당 서버에서 Tool 실행
+   * 3. 실패 시 자동 재시도 (exponential backoff)
+   * 4. 결과 정제 및 반환
+   *
+   * @param toolName - 실행할 Tool 이름
+   * @param args - Tool에 전달할 인자 (JSON 객체)
+   * @param options - timeout, retries 등 실행 옵션
+   * @returns 정제된 실행 결과
    */
   async executeTool(toolName, args = {}, options = {}) {
     this._ensureInitialized();
 
     const { timeout = this.options.timeout, retries = this.options.retries } = options;
 
-    // 도구를 제공하는 서버 찾기
+    // Tool을 제공하는 서버 찾기
     const serverName = this._findServerForTool(toolName);
     if (!serverName) {
       throw new Error(this.options.messages.toolNotFound(toolName));
@@ -815,16 +937,19 @@ export class MCPAgentClient extends EventEmitter {
     this._log('info', this.options.messages.toolExecuting(toolName, serverName));
     this._log('debug', `📝 인수: ${JSON.stringify(args)}`);
 
+    // 재시도 로직
     let lastError;
     const maxAttempts = Math.max(1, retries);
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         const result = await this.callTool(serverName, toolName, args);
 
+        // MCP 프로토콜에서 에러 응답 처리
         if (result.isError) {
           throw new Error(result.content[0]?.text || this.options.messages.unknownError);
         }
 
+        // 성공 시 정제된 결과 반환
         const cleanResult = {
           success: true,
           data: this._cleanToolResult(result),
@@ -840,28 +965,32 @@ export class MCPAgentClient extends EventEmitter {
         lastError = error;
         this._log('warn', this.options.messages.toolRetry(attempt, maxAttempts, error?.message || error));
 
-        // Check if server became disconnected
+        // 서버 연결 끊김 감지 시 즉시 중단
         const serverInfo = this.servers.get(serverName);
         if (serverInfo && !this._isServerConnected(serverInfo)) {
           this._log('error', `Server ${serverName} disconnected during tool execution`);
           throw new Error(`Server ${serverName} is no longer connected`);
         }
 
+        // Exponential backoff로 재시도 지연
         if (attempt < maxAttempts) {
-          // Robust exponential backoff with proper bounds
           const delay = this._calculateRetryDelay(attempt);
           await this._delay(delay);
         }
       }
     }
 
+    // 모든 재시도 실패 시 최종 에러
     this._log('error', this.options.messages.toolFinalFail(toolName));
     const errorMessage = lastError?.message || lastError?.toString() || this.options.messages.unknownError;
     throw new Error(this.options.messages.toolFailedWithRetries(toolName, maxAttempts, errorMessage));
   }
 
   /**
-   * Call a tool on a specific server
+   * Tool 실행 (저수준 API)
+   *
+   * 특정 서버의 Tool을 직접 호출
+   * executeTool과 달리 서버 이름을 직접 지정해야 함
    */
   async callTool(serverName, toolName, arguments_ = {}) {
     this._log('info', `🔧 Calling tool '${toolName}' on ${serverName}`);
@@ -1220,12 +1349,26 @@ export class MCPAgentClient extends EventEmitter {
     }
   }
 
-  // Private helper methods
+  // ========================================
+  // Private 헬퍼 메서드들
+  // ========================================
 
+  /**
+   * 초기화 여부 확인
+   *
+   * 대부분의 메서드 시작 시 호출하여
+   * initialize()가 먼저 호출되었는지 확인
+   */
   _ensureInitialized() {
     if (!this.isInitialized) throw new Error('초기화가 필요합니다. initialize()를 먼저 호출하세요.');
   }
 
+  /**
+   * Tool 이름으로 서버 찾기
+   *
+   * 연결된 모든 서버를 순회하며 해당 Tool을 제공하는 서버 검색
+   * 여러 서버가 같은 이름의 Tool을 제공할 경우 먼저 발견된 서버 반환
+   */
   _findServerForTool(toolName) {
     for (const [name, info] of this.servers) {
       if (this._isServerConnected(info) &&
@@ -1234,12 +1377,29 @@ export class MCPAgentClient extends EventEmitter {
     return null;
   }
 
+  /**
+   * Tool 실행 결과 정제
+   *
+   * MCP 프로토콜 응답 형식:
+   * {
+   *   content: [
+   *     { type: 'text', text: '...' },
+   *     { type: 'image', data: '...' },
+   *     ...
+   *   ]
+   * }
+   *
+   * 정제 작업:
+   * 1. text 타입만 있으면 문자열로 추출
+   * 2. JSON 형태면 파싱 시도
+   * 3. 배열이면 각 항목 개별 처리
+   */
   _cleanToolResult(result) {
     if (!result.content || !Array.isArray(result.content)) {
       return result;
     }
 
-    // If result is marked as raw text, return text without JSON parsing
+    // Raw text 모드: JSON 파싱 없이 그대로 반환
     if (result._isRawText) {
       if (result.content.length === 1 && result.content[0].type === 'text') {
         return result.content[0].text;
@@ -1247,9 +1407,9 @@ export class MCPAgentClient extends EventEmitter {
       return result.content.map(item => item.type === 'text' ? item.text : item);
     }
 
+    // 단일 text 항목: JSON 파싱 시도
     if (result.content.length === 1 && result.content[0].type === 'text') {
       const text = result.content[0].text;
-      // Only try to parse as JSON if it looks like structured data
       if (this._looksLikeJson(text)) {
         try {
           return this.safeJsonParse(text);
@@ -1264,6 +1424,7 @@ export class MCPAgentClient extends EventEmitter {
       return text;
     }
 
+    // 다중 항목: 각각 처리
     return result.content.map(item => {
       if (item.type === 'text') {
         if (this._looksLikeJson(item.text)) {
@@ -1284,7 +1445,14 @@ export class MCPAgentClient extends EventEmitter {
   }
 
   /**
-   * Centralized server state management
+   * 서버 상태 중앙 관리
+   *
+   * 서버 상태를 일관되게 업데이트하고 이벤트 발행:
+   * - status와 connected 필드 동시 업데이트
+   * - 상태 변경 시 'serverStatusChange' 이벤트 발행
+   * - disconnected 시 메모리 정리 트리거
+   *
+   * 가능한 상태: connecting, connected, disconnected, partially_connected, error
    */
   _setServerStatus(serverName, status, additionalInfo = {}) {
     const server = this.servers.get(serverName);
@@ -1325,7 +1493,9 @@ export class MCPAgentClient extends EventEmitter {
   }
 
   /**
-   * Check if server is connected (unified status check)
+   * 서버 연결 상태 확인
+   *
+   * connected 또는 partially_connected 상태만 "연결됨"으로 간주
    */
   _isServerConnected(server) {
     if (!server) return false;
@@ -1333,7 +1503,9 @@ export class MCPAgentClient extends EventEmitter {
   }
 
   /**
-   * Get server status with fallback
+   * 서버 상태 조회 (폴백 포함)
+   *
+   * status 필드 우선, 없으면 connected 필드로 판단
    */
   _getServerStatus(serverName) {
     const server = this.servers.get(serverName);
@@ -1342,10 +1514,16 @@ export class MCPAgentClient extends EventEmitter {
   }
 
   /**
-   * Wait for server to be fully ready before querying capabilities
-   */
-  /**
-   * Robust server readiness checking with exponential backoff
+   * 서버 준비 상태 대기
+   *
+   * 문제: 서버가 connect 직후 바로 listTools() 등을 호출하면 실패할 수 있음
+   * 해결: 서버가 완전히 준비될 때까지 재시도하며 대기
+   *
+   * 동작:
+   * 1. listTools()와 getServerCapabilities() 동시 호출
+   * 2. 둘 중 하나라도 성공하면 준비된 것으로 판단
+   * 3. 실패 시 exponential backoff로 재시도
+   * 4. 타임아웃 또는 최대 재시도 횟수 도달 시 포기
    */
   async _waitForServerReady(client, serverName) {
     const maxRetries = this.options.serverReadyRetries;
@@ -1440,11 +1618,13 @@ export class MCPAgentClient extends EventEmitter {
   }
 
   /**
-   * Get basic server info for readiness checking
+   * 서버 정보 조회 (에러 무시)
+   *
+   * 준비 상태 확인용으로 서버 capabilities 조회
+   * 실패해도 에러를 던지지 않고 null 반환
    */
   async _getServerInfo(client) {
     try {
-      // Try to get server capabilities/info without causing errors
       return await client.getServerCapabilities?.() || null;
     } catch (error) {
       return null;
@@ -1452,47 +1632,55 @@ export class MCPAgentClient extends EventEmitter {
   }
 
   /**
-   * Calculate retry delay with proper exponential backoff and bounds
+   * 재시도 지연시간 계산
+   *
+   * Exponential backoff + jitter:
+   * - 기본 지연 * 2^(attempt-1) 로 지수적 증가
+   * - 랜덤 jitter 추가로 thundering herd 방지
+   * - 최대 지연시간 제한
+   *
+   * 예: baseDelay=1000, attempt=3
+   * → 1000 * 2^2 = 4000ms + jitter
    */
   _calculateRetryDelay(attempt) {
     const baseDelay = this.options.retryDelay;
     const maxDelay = this.options.maxRetryDelay;
 
-    // Exponential backoff: baseDelay * 2^(attempt-1)
     const exponentialDelay = baseDelay * Math.pow(2, attempt - 1);
 
-    // Add jitter (configurable % of the delay) to prevent thundering herd
-    const jitterPercent = MCPAgentClient._safeParseFloat(process.env.MCP_JITTER_PERCENT, 0.15); // Default 15%
+    const jitterPercent = MCPAgentClient._safeParseFloat(process.env.MCP_JITTER_PERCENT, 0.15);
     const jitter = exponentialDelay * jitterPercent * Math.random();
 
-    // Cap at maximum delay
     return Math.min(exponentialDelay + jitter, maxDelay);
   }
 
   /**
-   * Check if text looks like JSON that should be parsed
+   * 텍스트가 JSON인지 판단
+   *
+   * 파싱 시도 여부를 결정하기 위한 휴리스틱:
+   * - { } 또는 [ ]로 감싸져 있어야 함
+   * - base64 문자열 제외
+   * - 이모지나 'Error:' 등으로 시작하는 일반 메시지 제외
    */
   _looksLikeJson(text) {
     if (typeof text !== 'string' || text.length === 0) return false;
 
-    // Skip if it's likely a base64 encoded string
     if (/^[A-Za-z0-9+/]*={0,2}$/.test(text.trim())) return false;
 
-    // Skip if it starts with response indicators (configurable)
     const responseIndicators = this.options.responseIndicators || ['✅', '❌', 'Error:', 'Warning:', 'Info:'];
     if (responseIndicators.some(indicator => text.startsWith(indicator))) return false;
 
-    // Only parse if it starts with { or [ (likely JSON)
     const trimmed = text.trim();
     return (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
            (trimmed.startsWith('[') && trimmed.endsWith(']'));
   }
 
   /**
-   * 메모리 정리 작업 수행
-   */
-  /**
-   * Safe on-demand memory cleanup - only when needed
+   * 메모리 정리
+   *
+   * 연결 해제된 서버 정보를 정리하여 메모리 누수 방지
+   * interval 대신 on-demand 방식으로 필요시에만 실행
+   * (disconnected 이벤트 발생 시 또는 명시적 호출 시)
    */
   performMemoryCleanup() {
     if (!this.memoryCleanupEnabled) return;
@@ -1544,24 +1732,61 @@ export class MCPAgentClient extends EventEmitter {
     }
   }
 
+  /**
+   * 지연 유틸리티
+   *
+   * Promise 기반 setTimeout으로 async/await에서 사용 가능
+   */
   _delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
+  /**
+   * Tool 카테고리 분류
+   *
+   * 향후 Tool을 카테고리별로 분류할 수 있도록 확장 가능
+   * 현재는 모두 'tool'로 반환
+   */
   _categorizeTool(toolName) {
     return 'tool';
   }
 }
 
+// ========================================
+// 팩토리 함수들
+// ========================================
+
 /**
- * 팩토리 함수 - 간편한 인스턴스 생성
+ * MCPAgentClient 인스턴스 생성 헬퍼
+ *
+ * new MCPAgentClient(options)의 간편 버전
+ *
+ * @param options - 클라이언트 설정 옵션
+ * @returns MCPAgentClient 인스턴스 (초기화 전 상태)
  */
 export function createMCPAgent(options = {}) {
   return new MCPAgentClient(options);
 }
 
 /**
- * 빠른 시작 함수 - JSON 설정 객체로 즉시 초기화
+ * 빠른 시작 함수
+ *
+ * 클라이언트 생성 + 초기화를 한 번에 수행
+ * 가장 간단하게 사용할 수 있는 방법
+ *
+ * 사용 예:
+ * const client = await quickStart({
+ *   mcpServers: {
+ *     "myserver": {
+ *       command: "node",
+ *       args: ["server.js"]
+ *     }
+ *   }
+ * });
+ *
+ * @param config - 서버 설정 (mcpServers 객체 포함)
+ * @param options - 클라이언트 옵션
+ * @returns 초기화 완료된 MCPAgentClient 인스턴스
  */
 export async function quickStart(config = {}, options = {}) {
   const agent = new MCPAgentClient(options);
