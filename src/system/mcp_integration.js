@@ -26,34 +26,42 @@ export class MCPIntegration {
    */
   async initialize() {
     try {
-      debugLog('MCP Integration initializing...');
+      debugLog('[MCP] Integration initializing...');
 
       // MCP 서버 설정 파일(~/.aiexe/mcp_config.json)에서 전역 설정 로드
+      debugLog('[MCP] Loading MCP config from ~/.aiexe/mcp_config.json');
       const mergedServers = await loadMergedMcpConfig();
 
       // MCP 서버가 설정되지 않은 경우 초기화 중단
       if (Object.keys(mergedServers).length === 0) {
-        debugLog('No MCP servers configured.');
-        debugLog('   Use "aiexecode mcp add" to configure servers.');
+        debugLog('[MCP] No MCP servers configured.');
+        debugLog('[MCP]   Use "aiexecode mcp add" to configure servers.');
         return { success: false, reason: 'no_servers' };
       }
 
+      debugLog(`[MCP] Found ${Object.keys(mergedServers).length} server(s) in config: ${Object.keys(mergedServers).join(', ')}`);
+
       // 각 서버 설정의 환경 변수 확장 (${VAR} 형식을 실제 값으로 치환)
+      debugLog('[MCP] Expanding environment variables in server configs...');
       const servers = {};
       for (const [name, config] of Object.entries(mergedServers)) {
         try {
+          debugLog(`[MCP]   Processing server '${name}' (type: ${config.type})`);
           servers[name] = expandEnvVars(config);
+          debugLog(`[MCP]   ✓ Server '${name}' config ready`);
         } catch (error) {
-          debugLog(`Error expanding env vars for server '${name}': ${error.message}`);
-          debugLog(`   Skipping server '${name}'`);
+          debugLog(`[MCP]   ✗ Error expanding env vars for server '${name}': ${error.message}`);
+          debugLog(`[MCP]   Skipping server '${name}'`);
           continue;
         }
       }
 
       if (Object.keys(servers).length === 0) {
-        debugLog('No valid MCP servers after configuration processing.');
+        debugLog('[MCP] No valid MCP servers after configuration processing.');
         return { success: false, reason: 'no_valid_servers' };
       }
+
+      debugLog(`[MCP] ${Object.keys(servers).length} server(s) ready for connection`);
 
       // mcp-agent-lib에 전달할 설정 객체 생성
       const config = {
@@ -62,22 +70,34 @@ export class MCPIntegration {
 
       // mcp-agent-lib의 createMCPAgent()를 호출하여 MCP Agent 인스턴스 생성
       // MCP Agent는 여러 MCP 서버와의 연결 및 통신을 관리하는 핵심 객체
+      debugLog('[MCP] Creating MCP Agent instance via mcp-agent-lib...');
+      const logLevel = process.env.MCP_LOG_LEVEL || 'info';
+      const consoleDebug = process.env.MCP_DEBUG === 'true';
+      debugLog(`[MCP]   Log level: ${logLevel}, Console debug: ${consoleDebug}`);
+
       this.mcpAgent = await createMCPAgent({
-        logLevel: process.env.MCP_LOG_LEVEL || 'info',
-        enableConsoleDebug: process.env.MCP_DEBUG === 'true'
+        logLevel: logLevel,
+        enableConsoleDebug: consoleDebug
       });
+      debugLog('[MCP] MCP Agent instance created');
 
       // MCP Agent 초기화: 설정된 모든 MCP 서버에 연결 시도
       // stdio, http, sse 등 다양한 전송 방식을 지원
+      debugLog('[MCP] Initializing MCP Agent and connecting to servers...');
       await this.mcpAgent.initialize(config);
+      debugLog('[MCP] MCP Agent initialization complete');
 
       // 연결된 모든 MCP 서버로부터 사용 가능한 도구(tool) 목록 조회
+      debugLog('[MCP] Fetching available tools from connected servers...');
       const availableTools = this.mcpAgent.getAvailableTools();
 
-      debugLog(`MCP Agent initialization complete: ${availableTools.length} tool(s) available`);
+      debugLog(`[MCP] Found ${availableTools.length} tool(s) across all servers`);
 
       // 각 도구를 내부 맵에 저장하고 AI Agent 시스템에 등록
+      debugLog('[MCP] Registering tools to AI Agent system...');
       for (const tool of availableTools) {
+        debugLog(`[MCP]   Registering tool '${tool.name}' from server '${tool.server}'`);
+
         // AI가 도구의 출처 서버를 명확히 인식할 수 있도록 설명에 서버 이름 추가
         const enhancedDescription = tool.description
           ? `[${tool.server} MCP] - ${tool.description}`
@@ -97,7 +117,11 @@ export class MCPIntegration {
           },
           // 도구 실행 함수: MCP Agent를 통해 실제 MCP 서버에 도구 실행 요청 전송
           execute: async (args) => {
-            return await this.mcpAgent.executeTool(tool.name, args);
+            debugLog(`[MCP] Executing tool '${tool.name}' on server '${tool.server}'`);
+            debugLog(`[MCP]   Args: ${JSON.stringify(args).substring(0, 200)}`);
+            const result = await this.mcpAgent.executeTool(tool.name, args);
+            debugLog(`[MCP]   Result: success=${result.success}`);
+            return result;
           }
         });
 
@@ -107,19 +131,31 @@ export class MCPIntegration {
         // 도구 승인 시스템에 MCP 도구 등록 (사용자 승인 필요 시 처리)
         registerMCPTool(tool.name, tool.server, tool.description || '');
 
-        debugLog(`  - ${tool.name} (from ${tool.server})`);
+        debugLog(`[MCP]   ✓ Tool '${tool.name}' registered`);
       }
 
       this.isInitialized = true;
+
+      const serverList = Array.from(this.mcpAgent.servers.keys());
+      debugLog(`[MCP] ========================================`);
+      debugLog(`[MCP] Integration initialized successfully!`);
+      debugLog(`[MCP]   Servers: ${serverList.join(', ')}`);
+      debugLog(`[MCP]   Tools: ${availableTools.length}`);
+      debugLog(`[MCP] ========================================`);
+
       return {
         success: true,
         toolCount: availableTools.length,
-        servers: Array.from(this.mcpAgent.servers.keys())
+        servers: serverList
       };
 
     } catch (error) {
-      debugLog(`MCP Integration initialization failed: ${error.message}`);
-      debugLog('   Continuing without MCP functionality.');
+      debugLog(`[MCP] ========================================`);
+      debugLog(`[MCP] Integration initialization FAILED`);
+      debugLog(`[MCP]   Error: ${error.message}`);
+      debugLog(`[MCP]   Stack: ${error.stack}`);
+      debugLog(`[MCP]   Continuing without MCP functionality.`);
+      debugLog(`[MCP] ========================================`);
       return { success: false, reason: 'initialization_error', error: error.message };
     }
   }
@@ -232,17 +268,23 @@ export class MCPIntegration {
   async cleanup() {
     if (this.mcpAgent) {
       try {
+        debugLog('[MCP] Starting cleanup process...');
         // mcp-agent-lib 버전에 따라 cleanup() 또는 disconnect() 메서드 호출
         // 모든 MCP 서버와의 연결을 정상적으로 종료
         if (typeof this.mcpAgent.cleanup === 'function') {
+          debugLog('[MCP] Calling mcpAgent.cleanup()...');
           await this.mcpAgent.cleanup();
         } else if (typeof this.mcpAgent.disconnect === 'function') {
+          debugLog('[MCP] Calling mcpAgent.disconnect()...');
           await this.mcpAgent.disconnect();
         }
-        debugLog('MCP Agent connection terminated');
+        debugLog('[MCP] All MCP server connections terminated successfully');
       } catch (error) {
-        debugLog(`Error during MCP Agent termination: ${error.message}`);
+        debugLog(`[MCP] Error during cleanup: ${error.message}`);
+        debugLog(`[MCP]   Stack: ${error.stack}`);
       }
+    } else {
+      debugLog('[MCP] No MCP Agent to cleanup (never initialized)');
     }
   }
 }
@@ -251,8 +293,11 @@ export class MCPIntegration {
  * 전역 MCP Integration 인스턴스 생성 헬퍼
  */
 export async function initializeMCPIntegration() {
+  debugLog('[MCP] initializeMCPIntegration() called');
   const integration = new MCPIntegration();
   const result = await integration.initialize();
+
+  debugLog(`[MCP] initializeMCPIntegration() complete - success: ${result?.success}, reason: ${result?.reason || 'N/A'}`);
 
   // 서버가 없어도 객체는 반환 (빈 서버 목록으로 동작)
   return integration;
