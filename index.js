@@ -348,7 +348,8 @@ const mcpInitPromise = initializeMCPIntegration().then(async integration => {
             logLines.push('Connected MCP Servers:');
             logLines.push('-'.repeat(80));
             servers.forEach((server, idx) => {
-                logLines.push(`\n[${idx + 1}] ${server.name}`);
+                if (idx > 0) logLines.push('');
+                logLines.push(`[${idx + 1}] ${server.name}`);
                 logLines.push(`    Status: ${server.status}`);
                 logLines.push(`    Tool Count: ${server.toolCount}`);
                 if (server.transport) {
