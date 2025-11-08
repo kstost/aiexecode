@@ -58,9 +58,6 @@ export class MCPAgentClient extends EventEmitter {
       serverReadyTimeout: MCPAgentClient._safeParseInt(process.env.MCP_SERVER_READY_TIMEOUT || options.serverReadyTimeout, 10000),
       serverReadyRetries: MCPAgentClient._safeParseInt(process.env.MCP_SERVER_READY_RETRIES || options.serverReadyRetries, 5),
 
-      // 보안 설정: stdio 서버에서 실행 가능한 명령어 화이트리스트
-      allowedCommands: ['node', 'python', 'python3', 'npx', 'deno'],
-
       // 보안 설정: 명령 인자에서 금지되는 셸 특수문자 (command injection 방지)
       dangerousChars: ['&', ';', '|', '`', '$', '>', '<', '*', '?'],
 
@@ -412,10 +409,9 @@ export class MCPAgentClient extends EventEmitter {
    * 서버 설정 보안 검증
    *
    * 연결 전에 서버 설정이 안전한지 검사:
-   * 1. stdio 서버: 허용된 명령어만 실행 가능한지 확인
-   * 2. stdio 서버: 인자에 위험한 셸 문자가 없는지 확인
-   * 3. http 서버: URL이 http/https 프로토콜인지 확인
-   * 4. 환경변수가 문자열 key-value인지 확인
+   * 1. stdio 서버: 인자에 위험한 셸 문자가 없는지 확인
+   * 2. http 서버: URL이 http/https 프로토콜인지 확인
+   * 3. 환경변수가 문자열 key-value인지 확인
    */
   validateServerConfig(serverName, serverConfig) {
     if (!serverName || typeof serverName !== 'string') {
@@ -428,13 +424,6 @@ export class MCPAgentClient extends EventEmitter {
 
     // stdio 서버 보안 검증
     if (serverConfig.command) {
-      const allowedCommands = this.options.allowedCommands || ['node', 'python', 'python3', 'npx', 'deno'];
-
-      // 화이트리스트에 없는 명령어는 실행 불가
-      if (!allowedCommands.includes(serverConfig.command)) {
-        throw new Error(`Command '${serverConfig.command}' is not allowed. Allowed commands: ${allowedCommands.join(', ')}`);
-      }
-
       // 명령 인자에 셸 특수문자 포함 여부 검사 (command injection 방지)
       if (serverConfig.args && Array.isArray(serverConfig.args)) {
         const dangerousChars = this.options.dangerousChars || ['&', ';', '|', '`', '$', '>', '<', '*', '?'];
@@ -512,7 +501,7 @@ export class MCPAgentClient extends EventEmitter {
 
       } catch (error) {
         // 보안 에러는 즉시 전파 (다른 서버 연결 중단)
-        if (error.message.includes('not allowed') || error.message.includes('dangerous characters')) {
+        if (error.message.includes('dangerous characters')) {
           throw error;
         }
         // 일반 연결 에러는 로그만 남기고 다음 서버 계속 진행

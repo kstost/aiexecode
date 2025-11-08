@@ -5,6 +5,7 @@
 .git/
 .gitignore
 test_viewer.*
+venv
 
 # Documentation (keep README.md)
 CLAUDE.md

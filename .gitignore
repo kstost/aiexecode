@@ -4,3 +4,4 @@ node_modules
 .aiexe
 .vscode
 .DS_Store
+venv

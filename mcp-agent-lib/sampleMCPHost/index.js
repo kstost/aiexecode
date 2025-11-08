@@ -182,21 +182,24 @@ async function main() {
   });
 
   // ========================================
-  // [5단계] 도구 실행 예시 - 브라우저 제어
+  // [5단계] 도구 실행 예시
   // ========================================
-  // 실제로 MCP 도구를 실행해봅니다.
-  // 여기서는 chrome-devtools 서버의 도구들을 사용하여:
-  // 1) 새 페이지를 열고
-  // 2) JavaScript를 실행하여 화면에 카운트다운을 표시합니다
   console.log(colors.purple.bold('\n[5단계] 도구 실행 예시...'));
-  console.log(colors.purple('  설명: chrome-devtools 서버의 도구들을 사용해 브라우저를 제어합니다'));
+  console.log(colors.purple('  설명: 연결된 서버들의 도구를 실제로 사용해봅니다'));
+  await waitForEnter();
+
+  // ========================================
+  // [5-1] Chrome DevTools - 브라우저 제어
+  // ========================================
+  console.log(colors.purple.bold('\n  [5-1] Chrome DevTools 서버의 도구 사용'));
+  console.log(colors.purple('  설명: 브라우저를 열고 JavaScript를 실행합니다'));
   await waitForEnter();
 
   // new_page 도구 찾기
   const newPageTool = availableTools.find(tool => tool.name === 'new_page');
 
   if (newPageTool) {
-    console.log(colors.purple.bold(`\n  [5-1] 새 페이지 열기`));
+    console.log(colors.purple.bold(`\n  새 페이지 열기`));
     console.log(colors.purple.italic(`  실행할 도구: ${newPageTool.name}`));
     console.log(colors.purple.italic(`  서버: ${newPageTool.server}`));
 
@@ -217,11 +220,11 @@ async function main() {
         console.log(colors.purple('  결과: ') + colors.peach(JSON.stringify(result.data, null, 2)));
 
         // ========================================
-        // [5-2] JavaScript 실행으로 카운트다운 표시
+        // JavaScript 실행으로 카운트다운 표시
         // ========================================
         // evaluate_script 도구를 사용하여 페이지에서 JavaScript를 실행합니다.
         // 10부터 0까지 숫자를 화면 중앙에 크게 표시합니다.
-        console.log(colors.purple.bold('\n  [5-2] 페이지에 카운트다운 표시하기'));
+        console.log(colors.purple.bold('\n  페이지에 카운트다운 표시하기'));
         console.log(colors.purple('  설명: evaluate_script 도구로 페이지 내용을 동적으로 변경합니다'));
         console.log(colors.purple('  페이지에 10부터 0까지 카운트다운을 표시합니다...'));
 
@@ -279,15 +282,16 @@ async function main() {
   }
 
   // ========================================
-  // [5-3] Context7 라이브러리 검색
+  // [5-2] Context7 - 라이브러리 문서 검색
   // ========================================
-  // resolve-library-id 도구를 사용하여 라이브러리 ID를 조회합니다.
-  console.log(colors.purple.bold('\n  [5-3] Context7 라이브러리 검색'));
-  console.log(colors.purple('  설명: resolve-library-id 도구로 라이브러리를 검색합니다'));
+  console.log(colors.purple.bold('\n  [5-2] Context7 서버의 도구 사용'));
+  console.log(colors.purple('  설명: 라이브러리 ID를 검색합니다'));
+  await waitForEnter();
 
   const resolveLibraryTool = availableTools.find(tool => tool.name === 'resolve-library-id');
 
   if (resolveLibraryTool) {
+    console.log(colors.purple.bold(`\n  라이브러리 검색`));
     console.log(colors.purple.italic(`  실행할 도구: ${resolveLibraryTool.name}`));
     console.log(colors.purple.italic(`  서버: ${resolveLibraryTool.server}`));
 
@@ -313,6 +317,41 @@ async function main() {
   }
 
   // ========================================
+  // [5-3] Simple Calculator - 덧셈 계산
+  // ========================================
+  console.log(colors.purple.bold('\n  [5-3] Simple Calculator 서버의 도구 사용'));
+  console.log(colors.purple('  설명: 두 숫자를 더합니다'));
+  await waitForEnter();
+
+  const addTool = availableTools.find(tool => tool.name === 'add');
+
+  if (addTool) {
+    console.log(colors.purple.bold(`\n  덧셈 계산`));
+    console.log(colors.purple.italic(`  실행할 도구: ${addTool.name}`));
+    console.log(colors.purple.italic(`  서버: ${addTool.server}`));
+
+    try {
+      console.log(colors.purple('  5 + 3을 계산합니다...'));
+
+      const addResult = await mcpAgent.executeTool('add', {
+        a: 5,
+        b: 3
+      });
+
+      if (addResult.success) {
+        console.log(colors.purple.bold('  ✓ 계산 완료'));
+        console.log(colors.purple('  결과: ') + colors.peach.bold(`5 + 3 = ${JSON.stringify(addResult.data)}`));
+      } else {
+        console.log(colors.pink.bold(`  ✗ 계산 실패: `) + colors.pink(addResult.error));
+      }
+    } catch (error) {
+      console.log(colors.pink.bold(`  ✗ 오류: `) + colors.pink(error.message));
+    }
+  } else {
+    console.log(colors.purple.italic('  add 도구를 찾을 수 없습니다'));
+  }
+
+  // ========================================
   // [6단계] 연결 정리 및 종료
   // ========================================
   // 프로그램을 종료하기 전에 모든 MCP 서버와의 연결을 정리합니다.
@@ -331,9 +370,10 @@ async function main() {
   console.log(colors.cyan('  1. 설정 파일에서 MCP 서버 목록을 읽었습니다'));
   console.log(colors.pink('  2. MCP Agent 객체를 생성하고 서버에 연결했습니다'));
   console.log(colors.peach('  3. 연결된 서버들이 제공하는 도구 목록을 확인했습니다'));
-  console.log(colors.yellow('  4. 실제로 도구를 실행하여 브라우저를 제어했습니다'));
+  console.log(colors.yellow('  4. Chrome DevTools로 브라우저를 제어했습니다'));
   console.log(colors.purple('  5. Context7으로 라이브러리를 검색했습니다'));
-  console.log(colors.cyan('  6. 사용을 마치고 모든 연결을 정리했습니다'));
+  console.log(colors.peach('  6. Simple Calculator로 덧셈 계산을 했습니다'));
+  console.log(colors.cyan('  7. 사용을 마치고 모든 연결을 정리했습니다'));
   console.log('');
   process.exit(0);
 }
