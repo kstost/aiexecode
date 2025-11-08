@@ -19,6 +19,8 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 // HTTP 전송: 일반 HTTP/HTTPS 요청-응답 기반 통신
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+// RAW 메시지 로거
+import { MCPMessageLogger, attachLoggerToTransport } from './mcp_message_logger.js';
 
 // 내부 디버그용 로그 함수 - 실제로는 아무 작업도 하지 않음 (성능 최적화)
 function consolelog() { }
@@ -117,6 +119,12 @@ export class MCPAgentClient extends EventEmitter {
     // 연결 해제된 서버 정보를 주기적으로 정리 (interval 대신 on-demand 방식)
     this.memoryCleanupEnabled = options.memoryCleanupEnabled ?? true;
     this.lastCleanupTime = Date.now();
+
+    // RAW 메시지 로거 초기화
+    this.messageLogger = options.messageLogger || new MCPMessageLogger({
+      enabled: options.enableRawMessageLogging ?? false,
+      ...options.messageLoggerOptions
+    });
   }
 
   /**
@@ -588,6 +596,9 @@ export class MCPAgentClient extends EventEmitter {
         this.emit('serverDisconnected', serverName);
       };
 
+      // RAW 메시지 로거 연결
+      attachLoggerToTransport(transport, serverName, this.messageLogger);
+
       // MCP 프로토콜 핸드셰이크 수행
       await client.connect(transport);
 
@@ -685,6 +696,9 @@ export class MCPAgentClient extends EventEmitter {
         this.emit('serverDisconnected', serverName);
       };
 
+      // RAW 메시지 로거 연결
+      attachLoggerToTransport(transport, serverName, this.messageLogger);
+
       // Connect using SDK
       await client.connect(transport);
 
@@ -762,6 +776,9 @@ export class MCPAgentClient extends EventEmitter {
       server.connected = false; // Keep for backward compatibility
       this.emit('serverDisconnected', name);
     };
+
+    // RAW 메시지 로거 연결
+    attachLoggerToTransport(transport, name, this.messageLogger);
 
     await client.connect(transport);
     server.capabilities = client.getServerCapabilities();
@@ -1726,6 +1743,11 @@ export class MCPAgentClient extends EventEmitter {
       this.servers.clear();
       this.clients.clear();
 
+      // RAW 메시지 로거 종료
+      if (this.messageLogger) {
+        this.messageLogger.close();
+      }
+
       this.secureLog('info', 'MCP Agent Client cleanup completed');
     } catch (error) {
       this.secureLog('error', 'Error during cleanup', { error: error.message });
@@ -1749,6 +1771,25 @@ export class MCPAgentClient extends EventEmitter {
    */
   _categorizeTool(toolName) {
     return 'tool';
+  }
+
+  /**
+   * RAW 메시지 로거 통계 조회
+   */
+  getMessageLoggerStats() {
+    if (!this.messageLogger) {
+      return null;
+    }
+    return this.messageLogger.getStats();
+  }
+
+  /**
+   * RAW 메시지 로거 통계 출력
+   */
+  printMessageLoggerStats() {
+    if (this.messageLogger) {
+      this.messageLogger.printStats();
+    }
   }
 }
 
@@ -1793,6 +1834,9 @@ export async function quickStart(config = {}, options = {}) {
   await agent.initialize(config);
   return agent;
 }
+
+// RAW 메시지 로거도 export
+export { MCPMessageLogger, attachLoggerToTransport } from './mcp_message_logger.js';
 
 // 기본 export
 export default MCPAgentClient;

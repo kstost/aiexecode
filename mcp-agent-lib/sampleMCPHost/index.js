@@ -79,7 +79,13 @@ async function main() {
 
   const mcpAgent = new MCPAgentClient({
     logLevel: 'info',              // 로그 레벨 설정
-    enableConsoleDebug: true       // 디버그 메시지 콘솔 출력
+    enableConsoleDebug: true,      // 디버그 메시지 콘솔 출력
+    enableRawMessageLogging: true, // RAW 메시지 로깅 활성화
+    messageLoggerOptions: {
+      logDir: join(__dirname, 'log'),  // 로그 디렉토리 경로
+      output: 'file',              // 파일로만 출력
+      prettyPrint: true            // JSON 예쁘게 출력
+    }
   });
   console.log('  ✓ MCP Agent가 만들어졌습니다');
 
