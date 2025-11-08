@@ -84,6 +84,9 @@ export class MCPMessageLogger {
       totalSentBytes: 0,
       totalReceivedBytes: 0
     };
+
+    // 파일명 순차 번호 (완전한 고유성 보장)
+    this.fileSequence = 1000000;
   }
 
   /**
@@ -106,21 +109,28 @@ export class MCPMessageLogger {
    */
   _writeMessageToFile(direction, serverName, message, metadata) {
     try {
-      const timestamp = formatTimestampForFilename();
-      const filename = `${timestamp}_${direction}.json`;
-      const filepath = path.join(this.options.logDir, filename);
+      // 서버별 하위 디렉토리 생성
+      const serverLogDir = path.join(this.options.logDir, serverName);
+      if (!fs.existsSync(serverLogDir)) {
+        fs.mkdirSync(serverLogDir, { recursive: true });
+      }
 
-      const logEntry = {
-        timestamp: new Date().toISOString(),
-        direction,
-        serverName,
-        message,
-        metadata
-      };
+      // 순차 번호 획득 및 증가
+      const sequence = this.fileSequence++;
+
+      const timestamp = formatTimestampForFilename();
+      const transportType = metadata?.transportType || 'unknown';
+      const filename = `${sequence}_${timestamp}_${direction}_${transportType}.json`;
+      const filepath = path.join(serverLogDir, filename);
+
+      // 헤더가 있으면 {header, message} 형식으로 저장
+      const logData = metadata?.headers
+        ? { headers: metadata.headers, message }
+        : message;
 
       const content = this.options.prettyPrint
-        ? JSON.stringify(logEntry, null, 2)
-        : JSON.stringify(logEntry);
+        ? JSON.stringify(logData, null, 2)
+        : JSON.stringify(logData);
 
       fs.writeFileSync(filepath, content, 'utf-8');
     } catch (error) {
@@ -404,9 +414,10 @@ ${'='.repeat(80)}
  * @param {object} transport - MCP Transport 객체
  * @param {string} serverName - 서버 이름
  * @param {MCPMessageLogger} logger - 로거 인스턴스
+ * @param {object} headers - HTTP 헤더 (선택)
  * @returns {object} - 원본 핸들러들을 저장한 객체
  */
-export function attachLoggerToTransport(transport, serverName, logger) {
+export function attachLoggerToTransport(transport, serverName, logger, headers = null) {
   if (!logger || !logger.options.enabled) {
     return null;
   }
@@ -421,10 +432,16 @@ export function attachLoggerToTransport(transport, serverName, logger) {
   const originalOnMessage = transport.onmessage;
   transport.onmessage = (message) => {
     // 메시지 로깅
-    logger.logReceivedMessage(serverName, message, {
+    const metadata = {
       timestamp: Date.now(),
       transportType: transport.constructor.name
-    });
+    };
+
+    if (headers) {
+      metadata.headers = headers;
+    }
+
+    logger.logReceivedMessage(serverName, message, metadata);
 
     // 원본 핸들러 호출
     if (originalOnMessage) {
@@ -452,10 +469,16 @@ export function attachLoggerToTransport(transport, serverName, logger) {
     const originalSend = transport.send.bind(transport);
     transport.send = function(message) {
       // 메시지 로깅
-      logger.logSentMessage(serverName, message, {
+      const metadata = {
         timestamp: Date.now(),
         transportType: transport.constructor.name
-      });
+      };
+
+      if (headers) {
+        metadata.headers = headers;
+      }
+
+      logger.logSentMessage(serverName, message, metadata);
 
       // 원본 send 호출
       return originalSend(message);

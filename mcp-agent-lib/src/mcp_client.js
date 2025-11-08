@@ -78,9 +78,10 @@ export class MCPAgentClient extends EventEmitter {
       },
 
       // MCP 프로토콜: 클라이언트 식별 정보
+      // options.clientInfo로 전달 가능, 없으면 기본값 사용
       clientInfo: {
-        name: process.env.MCP_CLIENT_NAME || 'mcp-agent-lib',
-        version: process.env.MCP_CLIENT_VERSION || '1.0.0'
+        name: options.clientInfo?.name || 'mcp-agent-lib',
+        version: options.clientInfo?.version || '1.0.0'
       },
 
       // 사용자 메시지 템플릿 (다국어 지원용)
@@ -611,10 +612,10 @@ export class MCPAgentClient extends EventEmitter {
       this.clients.set(serverName, client);
 
       // 서버가 완전히 준비될 때까지 대기 (재시도 로직 포함)
-      await this._waitForServerReady(client, serverName);
+      const readyData = await this._waitForServerReady(client, serverName);
 
       // 사용 가능한 tools/resources/prompts 목록 조회 및 저장
-      await this.listServerCapabilities(serverName);
+      await this.listServerCapabilities(serverName, readyData);
 
       // Log final server statistics without duplicate status setting
       const updatedServer = this.servers.get(serverName);
@@ -696,8 +697,8 @@ export class MCPAgentClient extends EventEmitter {
         this.emit('serverDisconnected', serverName);
       };
 
-      // RAW 메시지 로거 연결
-      attachLoggerToTransport(transport, serverName, this.messageLogger);
+      // RAW 메시지 로거 연결 (헤더 정보 포함)
+      attachLoggerToTransport(transport, serverName, this.messageLogger, serverConfig.headers);
 
       // Connect using SDK
       await client.connect(transport);
@@ -710,10 +711,10 @@ export class MCPAgentClient extends EventEmitter {
       this.clients.set(serverName, client);
 
       // Wait for server to be ready before querying capabilities
-      await this._waitForServerReady(client, serverName);
+      const readyData = await this._waitForServerReady(client, serverName);
 
       // List available capabilities
-      await this.listServerCapabilities(serverName);
+      await this.listServerCapabilities(serverName, readyData);
 
       this._log('info', `✅ Successfully connected to HTTP server ${serverName}`);
       return server;
@@ -777,8 +778,8 @@ export class MCPAgentClient extends EventEmitter {
       this.emit('serverDisconnected', name);
     };
 
-    // RAW 메시지 로거 연결
-    attachLoggerToTransport(transport, name, this.messageLogger);
+    // RAW 메시지 로거 연결 (헤더 정보 포함)
+    attachLoggerToTransport(transport, name, this.messageLogger, config.headers);
 
     await client.connect(transport);
     server.capabilities = client.getServerCapabilities();
@@ -788,9 +789,9 @@ export class MCPAgentClient extends EventEmitter {
     this.clients.set(name, client);
 
     // Wait for server to be ready before querying capabilities
-    await this._waitForServerReady(client, name);
+    const readyData = await this._waitForServerReady(client, name);
 
-    await this.listServerCapabilities(name);
+    await this.listServerCapabilities(name, readyData);
 
     this._log('info', `✅ ${name} SSE 연결됨`);
     return server;
@@ -799,7 +800,7 @@ export class MCPAgentClient extends EventEmitter {
   /**
    * List all capabilities of the connected server
    */
-  async listServerCapabilities(serverName) {
+  async listServerCapabilities(serverName, readyData = null) {
     const server = this.servers.get(serverName);
     if (!server) return;
 
@@ -812,56 +813,79 @@ export class MCPAgentClient extends EventEmitter {
         return;
       }
 
-      // Always try to list tools (even if capability is not explicitly declared)
-      try {
-        const toolsResponse = await client.listTools();
-        server.tools = toolsResponse.tools || [];
-        this._log('info', `🔧 Available tools from ${serverName}:`);
-        server.tools.forEach((tool, index) => {
-          this._log('info', `  ${index + 1}. ${tool.name}`);
-          if (tool.description) this._log('info', `     설명: ${tool.description}`);
-        });
-      } catch (toolsError) {
-        this._log('warn', `⚠️ Tools/list failed: ${toolsError.message}`);
+      // Check capabilities to determine what to query
+      const capabilities = server.capabilities || {};
+
+      // Query tools only if capability is declared
+      if (capabilities.tools) {
+        try {
+          let toolsResponse;
+          if (readyData && readyData.tools) {
+            // Reuse data from _waitForServerReady
+            toolsResponse = readyData.tools;
+            this._log('debug', `♻️ Reusing tools data from readiness check`);
+          } else {
+            // Fetch tools if not available from readiness check
+            toolsResponse = await client.listTools();
+          }
+
+          server.tools = toolsResponse.tools || [];
+          this._log('info', `🔧 Available tools from ${serverName}:`);
+          server.tools.forEach((tool, index) => {
+            this._log('info', `  ${index + 1}. ${tool.name}`);
+            if (tool.description) this._log('info', `     설명: ${tool.description}`);
+          });
+        } catch (toolsError) {
+          this._log('warn', `⚠️ Tools/list failed: ${toolsError.message}`);
+          server.tools = [];
+          // Mark server as partially connected if critical capabilities fail
+          if (toolsError.message.includes('timeout') || toolsError.message.includes('connection')) {
+            this._setServerStatus(serverName, 'partially_connected');
+          }
+        }
+      } else {
+        this._log('debug', `ℹ️ Server ${serverName} does not declare tools capability`);
         server.tools = [];
-        // Mark server as partially connected if critical capabilities fail
-        if (toolsError.message.includes('timeout') || toolsError.message.includes('connection')) {
-          this._setServerStatus(serverName, 'partially_connected');
-        }
       }
 
-      // Always try to list resources
+      // Query resources only if capability is declared
       let resources = [];
-      try {
-        const resourcesResponse = await client.listResources();
-        resources = resourcesResponse.resources || [];
-        this._log('info', `📄 Available resources from ${serverName}: ${resources.length} found`);
-        if (resources.length > 0) {
-          resources.forEach((resource, index) => {
-            this._log('info', `  ${index + 1}. ${resource.name} (${resource.uri})`);
-          });
+      if (capabilities.resources) {
+        try {
+          const resourcesResponse = await client.listResources();
+          resources = resourcesResponse.resources || [];
+          this._log('info', `📄 Available resources from ${serverName}: ${resources.length} found`);
+          if (resources.length > 0) {
+            resources.forEach((resource, index) => {
+              this._log('info', `  ${index + 1}. ${resource.name} (${resource.uri})`);
+            });
+          }
+        } catch (resourcesError) {
+          this._log('debug', `ℹ️ Resources not available from ${serverName}: ${resourcesError.message}`);
+          resources = [];
         }
-      } catch (resourcesError) {
-        this._log('debug', `ℹ️ Resources not available from ${serverName}: ${resourcesError.message}`);
-        resources = [];
-        // Don't mark as partially connected for resources as they're optional
+      } else {
+        this._log('debug', `ℹ️ Server ${serverName} does not declare resources capability`);
       }
 
-      // Always try to list prompts
+      // Query prompts only if capability is declared
       let prompts = [];
-      try {
-        const promptsResponse = await client.listPrompts();
-        prompts = promptsResponse.prompts || [];
-        this._log('info', `💬 Available prompts from ${serverName}: ${prompts.length} found`);
-        if (prompts.length > 0) {
-          prompts.forEach((prompt, index) => {
-            this._log('info', `  ${index + 1}. ${prompt.name}: ${prompt.description || 'No description'}`);
-          });
+      if (capabilities.prompts) {
+        try {
+          const promptsResponse = await client.listPrompts();
+          prompts = promptsResponse.prompts || [];
+          this._log('info', `💬 Available prompts from ${serverName}: ${prompts.length} found`);
+          if (prompts.length > 0) {
+            prompts.forEach((prompt, index) => {
+              this._log('info', `  ${index + 1}. ${prompt.name}: ${prompt.description || 'No description'}`);
+            });
+          }
+        } catch (promptsError) {
+          this._log('debug', `ℹ️ Prompts not available from ${serverName}: ${promptsError.message}`);
+          prompts = [];
         }
-      } catch (promptsError) {
-        this._log('debug', `ℹ️ Prompts not available from ${serverName}: ${promptsError.message}`);
-        prompts = [];
-        // Don't mark as partially connected for prompts as they're optional
+      } else {
+        this._log('debug', `ℹ️ Server ${serverName} does not declare prompts capability`);
       }
 
       // 새로운 서버 객체 생성하여 확실히 업데이트
@@ -1595,7 +1619,12 @@ export class MCPAgentClient extends EventEmitter {
             toolsStatus: toolsResponse.status,
             serverInfoStatus: serverInfo.status
           });
-          return true;
+
+          // Return tools data if available for reuse
+          return {
+            tools: toolsResponse.status === 'fulfilled' ? actualToolsResponse : null,
+            serverInfo: serverInfo.status === 'fulfilled' ? actualServerInfo : null
+          };
         }
 
       } catch (error) {
@@ -1631,7 +1660,7 @@ export class MCPAgentClient extends EventEmitter {
 
     // If we get here, server may be partially ready - don't fail completely
     this.secureLog('warn', `Server ${serverName} may not be fully ready, continuing anyway`);
-    return false;
+    return null;
   }
 
   /**
