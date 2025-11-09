@@ -21,6 +21,7 @@ rag_database/
 
 # MCP agent lib development files
 mcp-agent-lib/.commit_message.txt
+mcp-agent-lib/init.sh
 mcp-agent-lib/example/
 mcp-agent-lib/sampleFastMCPClient/
 mcp-agent-lib/sampleFastMCPServer/
