@@ -21,6 +21,13 @@ rag_database/
 
 # MCP agent lib development files
 mcp-agent-lib/.commit_message.txt
+mcp-agent-lib/example/
+mcp-agent-lib/sampleFastMCPClient/
+mcp-agent-lib/sampleFastMCPServer/
+mcp-agent-lib/sampleFastMCPServerElicitationRequest/
+mcp-agent-lib/sampleFastMCPServerRootsRequest/
+mcp-agent-lib/sampleMCPHost/
+mcp-agent-lib/sampleMCPHostFeatures/
 
 # Development dependencies
 sdks/
