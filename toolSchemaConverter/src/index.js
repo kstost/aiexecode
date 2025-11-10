@@ -38,3 +38,12 @@ export {
   convertChatRequestToResponsesFormat,
   convertResponsesResponseToChatFormat
 } from './converters/chat-to-responses.js';
+
+// Export error classes
+export {
+  LLMError,
+  AuthenticationError,
+  InvalidRequestError,
+  RateLimitError,
+  NotFoundError
+} from './errors.js';

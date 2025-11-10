@@ -73,6 +73,78 @@ async function exampleResponsesAPI() {
   console.log('\\nNote: Response is automatically converted to Chat Completions format for consistency');
 }
 
+// Example 2b: Using GPT-5 specific parameters
+async function exampleGPT5Parameters() {
+  console.log('\\n=== GPT-5 Specific Parameters ===');
+
+  const client = new UnifiedLLMClient({
+    provider: 'openai',
+    apiType: 'responses',
+    apiKey: process.env.OPENAI_API_KEY,
+    model: 'gpt-5'
+  });
+
+  const request = {
+    messages: [
+      { role: 'user', content: 'Solve this math problem: What is the square root of 144 plus the cube root of 27?' }
+    ],
+    // GPT-5 specific: reasoning effort control
+    // Options: "minimal", "low", "medium", "high"
+    reasoning_effort: 'high',  // Use high reasoning for complex problem
+
+    // GPT-5 specific: verbosity control
+    // Options: "low", "medium", "high"
+    verbosity: 'medium',
+
+    // Use max_output_tokens (not max_tokens for Responses API)
+    max_output_tokens: 500
+  };
+
+  const response = await client.chat(request);
+
+  console.log('\\nAnswer:', response.choices[0].message.content);
+
+  // Check if reasoning was included
+  if (response.choices[0].message.reasoning) {
+    console.log('\\nReasoning (Chain of Thought):', response.choices[0].message.reasoning);
+  }
+
+  // Original Responses API output is preserved in _responses_output
+  if (response._responses_output) {
+    console.log('\\nOriginal output items:', response._responses_output.map(item => item.type));
+  }
+}
+
+// Example 2c: Alternative parameter format
+async function exampleGPT5AlternativeFormat() {
+  console.log('\\n=== GPT-5 Alternative Parameter Format ===');
+
+  const client = new UnifiedLLMClient({
+    provider: 'openai',
+    apiType: 'responses',
+    apiKey: process.env.OPENAI_API_KEY,
+    model: 'gpt-5'
+  });
+
+  const request = {
+    messages: [
+      { role: 'user', content: 'Explain quantum entanglement in simple terms.' }
+    ],
+    // Alternative: use reasoning object directly
+    reasoning: {
+      effort: 'medium'
+    },
+    // Alternative: use text object directly
+    text: {
+      verbosity: 'high'
+    },
+    max_output_tokens: 1000
+  };
+
+  const response = await client.chat(request);
+  console.log('\\nResponse:', response.choices[0].message.content);
+}
+
 // Example 3: Comparing both APIs
 async function compareBothAPIs() {
   console.log('\\n=== Comparing Chat Completions vs Responses API ===');
@@ -172,6 +244,8 @@ async function main() {
     // Uncomment the example you want to run
     // await exampleChatCompletions();
     // await exampleResponsesAPI();
+    // await exampleGPT5Parameters();
+    // await exampleGPT5AlternativeFormat();
     // await compareBothAPIs();
     await exampleMultiTurnResponses();
   } catch (error) {

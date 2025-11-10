@@ -46,6 +46,7 @@ OpenAI는 두 가지 API를 제공합니다:
 - 자동 대화 저장
 - Reasoning, function calls 등 풍부한 Item 타입
 - `/v1/responses` 엔드포인트
+- Chain of Thought (CoT) 추론 지원
 
 ```javascript
 // Chat Completions API (기본값)
@@ -63,6 +64,19 @@ const client = new UnifiedLLMClient({
   apiKey: process.env.OPENAI_API_KEY,
   model: 'gpt-5'
 });
+
+// GPT-5 with reasoning control
+const response = await client.chat({
+  messages: [{ role: 'user', content: 'Solve this complex problem...' }],
+  reasoning_effort: 'high',  // "minimal" | "low" | "medium" | "high"
+  verbosity: 'medium',        // "low" | "medium" | "high"
+  max_output_tokens: 1000
+});
+
+// Access Chain of Thought reasoning
+if (response.choices[0].message.reasoning) {
+  console.log('CoT:', response.choices[0].message.reasoning);
+}
 ```
 
 **참고**: Responses API를 사용해도 응답은 Chat Completions 형식으로 변환되어 일관성을 유지합니다.
@@ -147,7 +161,33 @@ const client = new UnifiedLLMClient({
 });
 ```
 
-### 3. Multi-turn 대화 (도구 사용 포함)
+### 3. Streaming 응답
+
+```javascript
+const client = new UnifiedLLMClient({
+  provider: 'openai',
+  apiKey: process.env.OPENAI_API_KEY,
+  model: 'gpt-4o'
+});
+
+const stream = await client.chat({
+  messages: [
+    { role: 'user', content: 'Write a haiku about programming' }
+  ],
+  stream: true,  // Streaming 활성화
+  max_tokens: 100
+});
+
+// 스트림 처리
+process.stdout.write('Response: ');
+for await (const chunk of stream) {
+  const content = chunk.choices[0]?.delta?.content || '';
+  process.stdout.write(content);
+}
+console.log();
+```
+
+### 4. Multi-turn 대화 (도구 사용 포함)
 
 ```javascript
 const messages = [
@@ -274,6 +314,9 @@ toolSchemaConverter/
 # 기본 예시 실행
 npm run example
 
+# Streaming 예시 실행
+npm run example:streaming
+
 # OpenAI 두 API 비교 예시
 npm run example:openai-apis
 
@@ -282,6 +325,7 @@ npm run test-converters
 
 # 또는 직접 실행
 node examples/basic-usage.js
+node examples/streaming-usage.js
 node examples/openai-both-apis.js
 node examples/converter-test.js
 ```
@@ -294,35 +338,46 @@ node examples/converter-test.js
 - ✅ Function calling
 - ✅ Multi-turn conversations
 - ✅ 두 API 간 자동 변환
-- ⏳ Streaming (향후 지원 예정)
+- ✅ Streaming (Chat Completions API)
+- ⏳ Streaming for Responses API (향후 지원 예정)
 
 ### Claude
 - ✅ Tool use
 - ✅ Multi-turn conversations
 - ✅ System prompts
 - ✅ Parallel tool calls
+- ✅ Streaming
 
 ### Gemini
 - ✅ Function declarations
 - ✅ Sequential function calling
 - ✅ System instructions
+- ✅ Streaming
 
 ### Ollama
 - ✅ Function calling (호환 모델)
 - ✅ 로컬 실행
 - ✅ OpenAI 호환 형식
+- ✅ Streaming
 
 ## 주의사항
 
 1. **API 키**: 각 제공자별로 유효한 API 키가 필요합니다 (Ollama 제외)
 2. **모델 호환성**: 모든 모델이 function calling을 지원하는 것은 아닙니다
 3. **OpenAI API 타입**:
-   - Chat Completions: 안정적, 모든 모델 지원
+   - Chat Completions: 안정적, 모든 모델 지원, Streaming 지원
    - Responses API: gpt-5 등 최신 모델, 더 풍부한 기능
    - 기본값은 Chat Completions (호환성 최고)
-4. **Ollama**: Ollama를 사용하려면 로컬에서 Ollama 서버가 실행 중이어야 합니다
-5. **비용**: OpenAI, Claude, Gemini는 사용량에 따라 비용이 발생합니다
-6. **응답 형식**: 모든 응답은 OpenAI Chat Completions 형식으로 통일됩니다
+4. **GPT-5 / Responses API 제한사항**:
+   - ❌ `temperature`, `top_p`, `logprobs` 파라미터 미지원 (에러 발생)
+   - ✅ `reasoning_effort`: "minimal", "low", "medium", "high" (추론 수준 제어)
+   - ✅ `verbosity`: "low", "medium", "high" (출력 상세도 제어)
+   - ✅ `max_output_tokens` 사용 (max_tokens는 자동 변환됨)
+   - ✅ Chain of Thought 추론 과정이 `message.reasoning` 필드에 포함됨
+5. **Ollama**: Ollama를 사용하려면 로컬에서 Ollama 서버가 실행 중이어야 합니다
+6. **비용**: OpenAI, Claude, Gemini는 사용량에 따라 비용이 발생합니다
+7. **응답 형식**: 모든 응답은 OpenAI Chat Completions 형식으로 통일됩니다
+8. **Streaming**: 모든 제공자에서 `stream: true` 옵션으로 스트리밍 응답을 받을 수 있습니다 (Responses API 제외)
 
 ## 라이선스
 
