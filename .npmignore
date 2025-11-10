@@ -30,6 +30,9 @@ mcp-agent-lib/sampleFastMCPServerRootsRequest/
 mcp-agent-lib/sampleMCPHost/
 mcp-agent-lib/sampleMCPHostFeatures/
 
+# ToolSchemaConverter lib development files
+toolSchemaConverter/
+
 # Development dependencies
 sdks/
 
