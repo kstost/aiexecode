@@ -13,18 +13,23 @@ async function basicChatExample() {
   const apiKey = process.env.OPENAI_API_KEY;
 
   // 클라이언트 생성
-  const client = new UnifiedLLMClient({ apiKey });
-
-  // 간단한 채팅
-  const response = await client.chat({
-    model: 'gpt-4o-mini',
-    messages: [
-      { role: 'user', content: 'Hello! How are you?' }
-    ],
-    max_tokens: 100
+  const client = new UnifiedLLMClient({
+    provider: 'openai',
+    apiKey,
+    model: 'gpt-4o-mini'
   });
 
-  console.log('Response:', response.choices[0].message.content);
+  // 간단한 채팅 (Responses API 형식)
+  const response = await client.response({
+    input: 'Hello! How are you?',
+    max_output_tokens: 100
+  });
+
+  // 응답에서 텍스트 추출
+  const messageItem = response.output.find(item => item.type === 'message');
+  const text = messageItem?.content[0]?.text || '';
+
+  console.log('Response:', text);
   console.log('\nUsage:', response.usage);
 }
 
@@ -33,27 +38,33 @@ async function multipleModels() {
   console.log('\n=== Testing Multiple Models ===\n');
 
   const models = [
-    { key: process.env.OPENAI_API_KEY, model: 'gpt-4o-mini', name: 'OpenAI' },
-    { key: process.env.ANTHROPIC_API_KEY, model: 'claude-3-haiku-20240307', name: 'Claude' },
-    { key: process.env.GEMINI_API_KEY, model: 'gemini-2.5-flash', name: 'Gemini' }
+    { key: process.env.OPENAI_API_KEY, model: 'gpt-4o-mini', name: 'OpenAI', provider: 'openai' },
+    { key: process.env.ANTHROPIC_API_KEY, model: 'claude-3-haiku-20240307', name: 'Claude', provider: 'claude' },
+    { key: process.env.GEMINI_API_KEY, model: 'gemini-2.5-flash', name: 'Gemini', provider: 'gemini' }
   ];
 
-  for (const { key, model, name } of models) {
+  for (const { key, model, name, provider } of models) {
     if (!key) {
       console.log(`${name}: Skipped (no API key)\n`);
       continue;
     }
 
-    const client = new UnifiedLLMClient({ apiKey: key });
+    const client = new UnifiedLLMClient({
+      provider,
+      apiKey: key,
+      model
+    });
 
     try {
-      const response = await client.chat({
-        model: model,
-        messages: [{ role: 'user', content: 'Say hello in one word' }],
-        max_tokens: 10
+      const response = await client.response({
+        input: 'Say hello in one word',
+        max_output_tokens: 50
       });
 
-      console.log(`${name}:`, response.choices[0].message.content);
+      const messageItem = response.output.find(item => item.type === 'message');
+      const text = messageItem?.content[0]?.text || '';
+
+      console.log(`${name}:`, text);
     } catch (error) {
       console.log(`${name}: Error -`, error.message);
     }

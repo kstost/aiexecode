@@ -1,19 +1,15 @@
 /**
- * Unified LLM Function Calling Client
- * Supports OpenAI, Claude, Gemini, and Ollama with OpenAI-compatible interface
+ * Unified LLM Client with Responses API Interface
+ * Supports OpenAI, Claude, Gemini, and Ollama with OpenAI Responses API-compatible interface
  */
 
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-import { convertRequestToClaudeFormat } from './converters/openai-to-claude.js';
-import { convertClaudeResponseToOpenAI } from './converters/claude-to-openai.js';
-import { convertRequestToGeminiFormat } from './converters/openai-to-gemini.js';
-import { convertGeminiResponseToOpenAI } from './converters/gemini-to-openai.js';
-import { convertRequestToOllamaFormat } from './converters/openai-to-ollama.js';
-import { convertOllamaResponseToOpenAI } from './converters/ollama-to-openai.js';
-import { convertChatRequestToResponsesFormat, convertResponsesResponseToChatFormat } from './converters/chat-to-responses.js';
+import { convertResponsesRequestToClaudeFormat, convertClaudeResponseToResponsesFormat } from './converters/responses-to-claude.js';
+import { convertResponsesRequestToGeminiFormat, convertGeminiResponseToResponsesFormat } from './converters/responses-to-gemini.js';
+import { convertResponsesRequestToOllamaFormat, convertOllamaResponseToResponsesFormat } from './converters/responses-to-ollama.js';
 import { normalizeError, createErrorFromResponse } from './errors.js';
 
 export class UnifiedLLMClient {
@@ -21,17 +17,16 @@ export class UnifiedLLMClient {
    * Create a unified LLM client
    * @param {Object} config - Configuration object
    * @param {string} config.provider - Provider name: 'openai', 'claude', 'gemini', or 'ollama' (auto-detected from model if not provided)
-   * @param {string} [config.apiType] - API type for OpenAI: 'chat-completions' (default) or 'responses'
    * @param {string} [config.apiKey] - API key for the provider
    * @param {string} [config.baseUrl] - Base URL (for Ollama)
    * @param {string} [config.model] - Default model to use
    */
   constructor(config = {}) {
     this.provider = config.provider;
-    this.apiType = config.apiType || 'chat-completions';
     this.apiKey = config.apiKey;
     this.baseUrl = config.baseUrl;
     this.defaultModel = config.model;
+    this.explicitProvider = !!config.provider; // Track if provider was explicitly set
 
     // Auto-detect provider from model if not explicitly provided
     if (!this.provider && this.defaultModel) {
@@ -61,9 +56,9 @@ export class UnifiedLLMClient {
   }
 
   /**
-   * Check if model is GPT-5 or o3 series (requiring special parameter handling)
+   * Check if model is GPT-5, o3, or other reasoning models
    */
-  _isGPT5Model(model) {
+  _isReasoningModel(model) {
     return model === 'gpt-5' || model === 'gpt-5-mini' || model === 'gpt-5-nano' ||
            model === 'o3' || model === 'o3-mini';
   }
@@ -93,19 +88,20 @@ export class UnifiedLLMClient {
   }
 
   /**
-   * Create a chat completion (OpenAI-compatible interface)
-   * @param {Object} request - OpenAI-format request
-   * @returns {Promise<Object>|AsyncGenerator} OpenAI-format response or stream
+   * Create a response (Responses API-compatible interface)
+   * @param {Object} request - Responses API format request
+   * @returns {Promise<Object>|AsyncGenerator} Responses API format response or stream
    */
-  async chat(request) {
+  async response(request) {
     // Set default model if not provided
     if (!request.model && this.defaultModel) {
       request.model = this.defaultModel;
     }
 
     // Auto-detect provider from model name in request
+    // Only if provider was not explicitly set in constructor
     let effectiveProvider = this.provider;
-    if (request.model) {
+    if (request.model && !this.explicitProvider) {
       const detectedProvider = this._detectProviderFromModel(request.model);
       if (detectedProvider) {
         effectiveProvider = detectedProvider;
@@ -114,8 +110,6 @@ export class UnifiedLLMClient {
           const oldProvider = this.provider;
           this.provider = effectiveProvider;
           this._initializeClient();
-          // Restore old provider after request
-          // (Note: This is a temporary switch for this request only)
         }
       }
     }
@@ -125,61 +119,63 @@ export class UnifiedLLMClient {
 
     switch (effectiveProvider) {
       case 'openai':
-        return isStreaming ? this._chatOpenAIStream(request) : await this._chatOpenAI(request);
+        return isStreaming ? this._responseOpenAIStream(request) : await this._responseOpenAI(request);
 
       case 'claude':
-        return isStreaming ? this._chatClaudeStream(request) : await this._chatClaude(request);
+        return isStreaming ? this._responseClaudeStream(request) : await this._responseClaude(request);
 
       case 'gemini':
-        return isStreaming ? this._chatGeminiStream(request) : await this._chatGemini(request);
+        return isStreaming ? this._responseGeminiStream(request) : await this._responseGemini(request);
 
       case 'ollama':
-        return isStreaming ? this._chatOllamaStream(request) : await this._chatOllama(request);
+        return isStreaming ? this._responseOllamaStream(request) : await this._responseOllama(request);
 
       default:
         throw new Error(`Unsupported provider: ${this.provider}`);
     }
   }
 
-  async _chatOpenAI(request) {
+  async _responseOpenAI(request) {
     try {
-      // Use Responses API if apiType is 'responses'
-      if (this.apiType === 'responses') {
-        const responsesRequest = convertChatRequestToResponsesFormat(request);
-
-        // Call Responses API (note: OpenAI SDK may not have this yet, using custom call)
-        const response = await this._callOpenAIResponsesAPI(responsesRequest);
-
-        // Convert back to Chat Completions format for consistency
-        return convertResponsesResponseToChatFormat(response);
-      } else {
-        // Default: Chat Completions API
-
-        // GPT-5/o3 models use max_completion_tokens instead of max_tokens
-        if (request.model && this._isGPT5Model(request.model)) {
-          const modifiedRequest = { ...request };
-
-          // Convert max_tokens to max_completion_tokens for GPT-5
-          if (modifiedRequest.max_tokens !== undefined) {
-            modifiedRequest.max_completion_tokens = modifiedRequest.max_tokens;
-            delete modifiedRequest.max_tokens;
-          }
-
-          const response = await this.client.chat.completions.create(modifiedRequest);
-          return response;
-        }
-
-        const response = await this.client.chat.completions.create(request);
-        return response;
-      }
+      // Call OpenAI Responses API directly
+      const response = await this._callOpenAIResponsesAPI(request);
+      return response;
     } catch (error) {
       throw normalizeError(error, 'openai');
     }
   }
 
   async _callOpenAIResponsesAPI(request) {
-    // OpenAI SDK might not have responses.create yet, so we use fetch
+    // Use fetch to call Responses API
     const url = 'https://api.openai.com/v1/responses';
+
+    // Convert tools format for OpenAI Responses API
+    // OpenAI uses: { type: 'function', name, description, parameters }
+    // Not: { type: 'custom', name, description, input_schema }
+    const openAIRequest = { ...request };
+    if (openAIRequest.tools && Array.isArray(openAIRequest.tools)) {
+      openAIRequest.tools = openAIRequest.tools.map(tool => {
+        if (tool.type === 'custom' && tool.input_schema) {
+          // Convert custom format to OpenAI Responses API format
+          return {
+            type: 'function',
+            name: tool.name,
+            description: tool.description || `Tool: ${tool.name}`,
+            parameters: tool.input_schema
+          };
+        } else if (tool.type === 'function' && tool.function) {
+          // Convert Chat Completions format to Responses API format
+          return {
+            type: 'function',
+            name: tool.function.name,
+            description: tool.function.description || `Function: ${tool.function.name}`,
+            parameters: tool.function.parameters
+          };
+        }
+        // Already in correct format or pass through
+        return tool;
+      });
+    }
 
     const response = await fetch(url, {
       method: 'POST',
@@ -187,7 +183,7 @@ export class UnifiedLLMClient {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${this.apiKey}`
       },
-      body: JSON.stringify(request)
+      body: JSON.stringify(openAIRequest)
     });
 
     if (!response.ok) {
@@ -195,22 +191,39 @@ export class UnifiedLLMClient {
       throw error;
     }
 
-    return await response.json();
+    const data = await response.json();
+
+    // Parse function call arguments if they are strings
+    if (data.output && Array.isArray(data.output)) {
+      for (const item of data.output) {
+        if (item.type === 'function_call' && typeof item.arguments === 'string') {
+          try {
+            item.input = JSON.parse(item.arguments);
+            delete item.arguments; // Keep only 'input' for consistency
+          } catch (e) {
+            // If parsing fails, keep as string
+            item.input = item.arguments;
+          }
+        }
+      }
+    }
+
+    return data;
   }
 
-  async _chatClaude(request) {
+  async _responseClaude(request) {
     try {
-      const claudeRequest = convertRequestToClaudeFormat(request);
+      const claudeRequest = convertResponsesRequestToClaudeFormat(request);
       const claudeResponse = await this.client.messages.create(claudeRequest);
-      return convertClaudeResponseToOpenAI(claudeResponse);
+      return convertClaudeResponseToResponsesFormat(claudeResponse, request.model);
     } catch (error) {
       throw normalizeError(error, 'claude');
     }
   }
 
-  async _chatGemini(request) {
+  async _responseGemini(request) {
     try {
-      const geminiRequest = convertRequestToGeminiFormat(request);
+      const geminiRequest = convertResponsesRequestToGeminiFormat(request);
 
       // Create model configuration
       const modelConfig = { model: request.model || 'gemini-2.5-flash' };
@@ -227,7 +240,7 @@ export class UnifiedLLMClient {
 
       const model = this.client.getGenerativeModel(modelConfig);
 
-      // Prepare generateContent request (without tools and systemInstruction as they're in model)
+      // Prepare generateContent request
       const generateRequest = {
         contents: geminiRequest.contents
       };
@@ -239,8 +252,8 @@ export class UnifiedLLMClient {
       const result = await model.generateContent(generateRequest);
       const response = await result.response;
 
-      // Convert to OpenAI format
-      return convertGeminiResponseToOpenAI({
+      // Convert to Responses API format
+      return convertGeminiResponseToResponsesFormat({
         candidates: [
           {
             content: response.candidates?.[0]?.content,
@@ -254,9 +267,9 @@ export class UnifiedLLMClient {
     }
   }
 
-  async _chatOllama(request) {
+  async _responseOllama(request) {
     try {
-      const { url, request: ollamaRequest } = convertRequestToOllamaFormat(request, this.baseUrl);
+      const { url, request: ollamaRequest } = convertResponsesRequestToOllamaFormat(request, this.baseUrl);
 
       const response = await fetch(url, {
         method: 'POST',
@@ -272,7 +285,7 @@ export class UnifiedLLMClient {
       }
 
       const ollamaResponse = await response.json();
-      return convertOllamaResponseToOpenAI(ollamaResponse);
+      return convertOllamaResponseToResponsesFormat(ollamaResponse, request.model);
     } catch (error) {
       throw normalizeError(error, 'ollama');
     }
@@ -283,33 +296,56 @@ export class UnifiedLLMClient {
   // ============================================
 
   /**
-   * OpenAI streaming chat completion
-   * @param {Object} request - OpenAI-format request
-   * @returns {AsyncGenerator} OpenAI-format stream
+   * OpenAI streaming response
+   * @param {Object} request - Responses API format request
+   * @returns {AsyncGenerator} Responses API format stream
    */
-  async *_chatOpenAIStream(request) {
+  async *_responseOpenAIStream(request) {
     try {
-      // Use Responses API if apiType is 'responses'
-      if (this.apiType === 'responses') {
-        // TODO: Implement Responses API streaming if needed
-        throw new Error('Streaming is not yet supported for OpenAI Responses API');
-      }
-
-      // Default: Chat Completions API streaming
-
-      // GPT-5/o3 models use max_completion_tokens instead of max_tokens
+      // OpenAI Responses API streaming
       const streamRequest = { ...request, stream: true };
-      if (request.model && this._isGPT5Model(request.model)) {
-        if (streamRequest.max_tokens !== undefined) {
-          streamRequest.max_completion_tokens = streamRequest.max_tokens;
-          delete streamRequest.max_tokens;
-        }
+
+      const url = 'https://api.openai.com/v1/responses';
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`
+        },
+        body: JSON.stringify(streamRequest)
+      });
+
+      if (!response.ok) {
+        const error = await createErrorFromResponse(response, 'openai');
+        throw error;
       }
 
-      const stream = await this.client.chat.completions.create(streamRequest);
+      // Parse Server-Sent Events
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
 
-      for await (const chunk of stream) {
-        yield chunk;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') continue;
+
+            try {
+              const chunk = JSON.parse(data);
+              yield chunk;
+            } catch (parseError) {
+              console.error('Error parsing OpenAI stream chunk:', parseError);
+            }
+          }
+        }
       }
     } catch (error) {
       throw normalizeError(error, 'openai');
@@ -317,54 +353,41 @@ export class UnifiedLLMClient {
   }
 
   /**
-   * Claude streaming chat completion
-   * @param {Object} request - OpenAI-format request
-   * @returns {AsyncGenerator} OpenAI-format stream
+   * Claude streaming response
+   * @param {Object} request - Responses API format request
+   * @returns {AsyncGenerator} Responses API format stream
    */
-  async *_chatClaudeStream(request) {
+  async *_responseClaudeStream(request) {
     try {
-      const claudeRequest = convertRequestToClaudeFormat(request);
-
+      const claudeRequest = convertResponsesRequestToClaudeFormat(request);
       const stream = await this.client.messages.stream(claudeRequest);
 
-      let chunkIndex = 0;
-      const streamId = `chatcmpl-${Date.now()}`;
+      const streamId = `resp_${Date.now()}`;
       const created = Math.floor(Date.now() / 1000);
+      let currentMessageId = `msg_${Date.now()}`;
 
       for await (const event of stream) {
-        // Handle different event types
         if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
-          // Convert to OpenAI streaming format
+          // Convert to Responses API streaming format
           yield {
             id: streamId,
-            object: 'chat.completion.chunk',
-            created: created,
+            object: 'response.delta',
+            created_at: created,
             model: request.model || 'claude-sonnet-4-5',
-            choices: [
-              {
-                index: 0,
-                delta: {
-                  content: event.delta.text
-                },
-                finish_reason: null
-              }
-            ]
+            delta: {
+              type: 'output_text',
+              message_id: currentMessageId,
+              text: event.delta.text
+            }
           };
-          chunkIndex++;
         } else if (event.type === 'message_delta' && event.delta?.stop_reason) {
-          // Final chunk with finish reason
+          // Final chunk
           yield {
             id: streamId,
-            object: 'chat.completion.chunk',
-            created: created,
+            object: 'response.done',
+            created_at: created,
             model: request.model || 'claude-sonnet-4-5',
-            choices: [
-              {
-                index: 0,
-                delta: {},
-                finish_reason: event.delta.stop_reason === 'end_turn' ? 'stop' : event.delta.stop_reason
-              }
-            ]
+            status: 'completed'
           };
         }
       }
@@ -374,30 +397,27 @@ export class UnifiedLLMClient {
   }
 
   /**
-   * Gemini streaming chat completion
-   * @param {Object} request - OpenAI-format request
-   * @returns {AsyncGenerator} OpenAI-format stream
+   * Gemini streaming response
+   * @param {Object} request - Responses API format request
+   * @returns {AsyncGenerator} Responses API format stream
    */
-  async *_chatGeminiStream(request) {
+  async *_responseGeminiStream(request) {
     try {
-      const geminiRequest = convertRequestToGeminiFormat(request);
+      const geminiRequest = convertResponsesRequestToGeminiFormat(request);
 
       // Create model configuration
       const modelConfig = { model: request.model || 'gemini-2.5-flash' };
 
-      // Add tools to model config if present
       if (geminiRequest.tools && geminiRequest.tools.length > 0) {
         modelConfig.tools = geminiRequest.tools;
       }
 
-      // Add system instruction to model config if present
       if (geminiRequest.systemInstruction) {
         modelConfig.systemInstruction = geminiRequest.systemInstruction;
       }
 
       const model = this.client.getGenerativeModel(modelConfig);
 
-      // Prepare generateContent request (without tools and systemInstruction as they're in model)
       const generateRequest = {
         contents: geminiRequest.contents
       };
@@ -408,8 +428,9 @@ export class UnifiedLLMClient {
 
       const result = await model.generateContentStream(generateRequest);
 
-      const streamId = `chatcmpl-${Date.now()}`;
+      const streamId = `resp_${Date.now()}`;
       const created = Math.floor(Date.now() / 1000);
+      const messageId = `msg_${Date.now()}`;
 
       for await (const chunk of result.stream) {
         const text = chunk.text();
@@ -417,38 +438,25 @@ export class UnifiedLLMClient {
         if (text) {
           yield {
             id: streamId,
-            object: 'chat.completion.chunk',
-            created: created,
+            object: 'response.delta',
+            created_at: created,
             model: request.model || 'gemini-2.5-flash',
-            choices: [
-              {
-                index: 0,
-                delta: {
-                  content: text
-                },
-                finish_reason: null
-              }
-            ]
+            delta: {
+              type: 'output_text',
+              message_id: messageId,
+              text: text
+            }
           };
         }
       }
 
       // Final chunk
-      const response = await result.response;
-      const finishReason = response.candidates?.[0]?.finishReason;
-
       yield {
         id: streamId,
-        object: 'chat.completion.chunk',
-        created: created,
+        object: 'response.done',
+        created_at: created,
         model: request.model || 'gemini-2.5-flash',
-        choices: [
-          {
-            index: 0,
-            delta: {},
-            finish_reason: finishReason === 'STOP' ? 'stop' : (finishReason || 'stop')
-          }
-        ]
+        status: 'completed'
       };
     } catch (error) {
       throw normalizeError(error, 'gemini');
@@ -456,13 +464,13 @@ export class UnifiedLLMClient {
   }
 
   /**
-   * Ollama streaming chat completion
-   * @param {Object} request - OpenAI-format request
-   * @returns {AsyncGenerator} OpenAI-format stream
+   * Ollama streaming response
+   * @param {Object} request - Responses API format request
+   * @returns {AsyncGenerator} Responses API format stream
    */
-  async *_chatOllamaStream(request) {
+  async *_responseOllamaStream(request) {
     try {
-      const { url, request: ollamaRequest } = convertRequestToOllamaFormat(request, this.baseUrl);
+      const { url, request: ollamaRequest } = convertResponsesRequestToOllamaFormat(request, this.baseUrl);
 
       // Ensure stream is enabled
       ollamaRequest.stream = true;
@@ -479,8 +487,9 @@ export class UnifiedLLMClient {
         throw new Error(`Ollama API error: ${response.statusText}`);
       }
 
-      const streamId = `chatcmpl-${Date.now()}`;
+      const streamId = `resp_${Date.now()}`;
       const created = Math.floor(Date.now() / 1000);
+      const messageId = `msg_${Date.now()}`;
 
       // Parse streaming response (newline-delimited JSON)
       const reader = response.body.getReader();
@@ -494,7 +503,7 @@ export class UnifiedLLMClient {
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+        buffer = lines.pop() || '';
 
         for (const line of lines) {
           if (line.trim()) {
@@ -504,34 +513,24 @@ export class UnifiedLLMClient {
               if (chunk.message?.content) {
                 yield {
                   id: streamId,
-                  object: 'chat.completion.chunk',
-                  created: created,
+                  object: 'response.delta',
+                  created_at: created,
                   model: request.model,
-                  choices: [
-                    {
-                      index: 0,
-                      delta: {
-                        content: chunk.message.content
-                      },
-                      finish_reason: null
-                    }
-                  ]
+                  delta: {
+                    type: 'output_text',
+                    message_id: messageId,
+                    text: chunk.message.content
+                  }
                 };
               }
 
               if (chunk.done) {
                 yield {
                   id: streamId,
-                  object: 'chat.completion.chunk',
-                  created: created,
+                  object: 'response.done',
+                  created_at: created,
                   model: request.model,
-                  choices: [
-                    {
-                      index: 0,
-                      delta: {},
-                      finish_reason: chunk.done_reason || 'stop'
-                    }
-                  ]
+                  status: 'completed'
                 };
               }
             } catch (parseError) {

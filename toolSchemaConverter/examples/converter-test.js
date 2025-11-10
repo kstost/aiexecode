@@ -1,5 +1,8 @@
 /**
  * Test the converters independently
+ *
+ * NOTE: This tests the LEGACY Chat Completions API converters.
+ * For modern Responses API examples, see responses-api-example.js
  */
 
 import {

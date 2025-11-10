@@ -10,40 +10,40 @@ async function basicStreaming() {
   console.log('=== Basic Streaming Example ===\n');
 
   const client = new UnifiedLLMClient({
-    apiKey: process.env.OPENAI_API_KEY
+    provider: 'openai',
+    apiKey: process.env.OPENAI_API_KEY,
+    model: 'gpt-4o-mini'
   });
 
-  const stream = await client.chat({
-    model: 'gpt-4o-mini',
-    messages: [
-      { role: 'user', content: 'Write a haiku about programming' }
-    ],
-    max_tokens: 100,
+  const stream = await client.response({
+    input: 'Write a haiku about programming',
+    max_output_tokens: 100,
     stream: true  // 스트리밍 활성화
   });
 
-  // 스트리밍 응답 처리
+  // 스트리밍 응답 처리 (Responses API 형식)
   process.stdout.write('Response: ');
   for await (const chunk of stream) {
-    const content = chunk.choices[0]?.delta?.content || '';
-    process.stdout.write(content);
+    if (chunk.object === 'response.delta' && chunk.delta?.text) {
+      process.stdout.write(chunk.delta.text);
+    } else if (chunk.object === 'response.done') {
+      process.stdout.write('\n\n');
+    }
   }
-  process.stdout.write('\n\n');
 }
 
 async function streamingWithProgress() {
   console.log('=== Streaming with Progress ===\n');
 
   const client = new UnifiedLLMClient({
-    apiKey: process.env.OPENAI_API_KEY
+    provider: 'openai',
+    apiKey: process.env.OPENAI_API_KEY,
+    model: 'gpt-4o-mini'
   });
 
-  const stream = await client.chat({
-    model: 'gpt-4o-mini',
-    messages: [
-      { role: 'user', content: 'Count from 1 to 10' }
-    ],
-    max_tokens: 100,
+  const stream = await client.response({
+    input: 'Count from 1 to 10',
+    max_output_tokens: 100,
     stream: true
   });
 
@@ -51,12 +51,13 @@ async function streamingWithProgress() {
   let totalContent = '';
 
   for await (const chunk of stream) {
-    chunkCount++;
-    const content = chunk.choices[0]?.delta?.content || '';
-    totalContent += content;
+    if (chunk.object === 'response.delta' && chunk.delta?.text) {
+      chunkCount++;
+      totalContent += chunk.delta.text;
 
-    // 진행 상황 표시
-    process.stdout.write(`\rChunks: ${chunkCount}, Chars: ${totalContent.length}`);
+      // 진행 상황 표시
+      process.stdout.write(`\rChunks: ${chunkCount}, Chars: ${totalContent.length}`);
+    }
   }
 
   console.log('\n\nFinal content:', totalContent);
@@ -68,25 +69,26 @@ async function gpt5Streaming() {
   console.log('\n=== GPT-5 Streaming ===\n');
 
   const client = new UnifiedLLMClient({
-    apiKey: process.env.OPENAI_API_KEY
+    provider: 'openai',
+    apiKey: process.env.OPENAI_API_KEY,
+    model: 'gpt-5-mini'
   });
 
   try {
-    const stream = await client.chat({
-      model: 'gpt-5-nano',
-      messages: [
-        { role: 'user', content: 'Explain AI in one sentence' }
-      ],
-      max_tokens: 50,
+    const stream = await client.response({
+      input: 'Explain AI in one sentence',
+      max_output_tokens: 100,
       stream: true
     });
 
     process.stdout.write('GPT-5 Response: ');
     for await (const chunk of stream) {
-      const content = chunk.choices[0]?.delta?.content || '';
-      process.stdout.write(content);
+      if (chunk.object === 'response.delta' && chunk.delta?.text) {
+        process.stdout.write(chunk.delta.text);
+      } else if (chunk.object === 'response.done') {
+        process.stdout.write('\n');
+      }
     }
-    process.stdout.write('\n');
   } catch (error) {
     console.log('GPT-5 Error:', error.message);
   }
