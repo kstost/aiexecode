@@ -28,9 +28,14 @@ export function convertResponsesRequestToClaudeFormat(responsesRequest) {
     for (const item of responsesRequest.input) {
       if (item.role && item.content) {
         // Already in message format
+        // Handle content that might be an array (OpenAI Responses API format)
+        const content = Array.isArray(item.content)
+          ? item.content.map(c => c.type === 'input_text' || c.type === 'text' ? c.text : c).filter(Boolean).join('\n')
+          : item.content;
+
         if (item.role === 'system') {
           // System messages go to separate field in Claude
-          claudeRequest.system = item.content;
+          claudeRequest.system = content;
         } else if (item.role === 'tool') {
           // Tool result
           messages.push({
@@ -46,7 +51,7 @@ export function convertResponsesRequestToClaudeFormat(responsesRequest) {
         } else {
           messages.push({
             role: item.role === 'assistant' ? 'assistant' : 'user',
-            content: item.content
+            content: content
           });
         }
       }

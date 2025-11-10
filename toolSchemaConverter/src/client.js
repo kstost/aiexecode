@@ -10,6 +10,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { convertResponsesRequestToClaudeFormat, convertClaudeResponseToResponsesFormat } from './converters/responses-to-claude.js';
 import { convertResponsesRequestToGeminiFormat, convertGeminiResponseToResponsesFormat } from './converters/responses-to-gemini.js';
 import { convertResponsesRequestToOllamaFormat, convertOllamaResponseToResponsesFormat } from './converters/responses-to-ollama.js';
+import { normalizeInput } from './converters/input-normalizer.js';
 import { normalizeError, createErrorFromResponse } from './errors.js';
 
 export class UnifiedLLMClient {
@@ -146,13 +147,18 @@ export class UnifiedLLMClient {
   }
 
   async _callOpenAIResponsesAPI(request) {
-    // Use fetch to call Responses API
-    const url = 'https://api.openai.com/v1/responses';
+    // Convert to proper Responses API format (like ai_request.js)
+    const openAIRequest = { ...request };
 
-    // Convert tools format for OpenAI Responses API
+    // 1. Normalize input to Responses API format
+    // Convert from string or Chat Completions format to proper input array
+    if (openAIRequest.input) {
+      openAIRequest.input = normalizeInput(openAIRequest.input);
+    }
+
+    // 2. Tools conversion
     // OpenAI uses: { type: 'function', name, description, parameters }
     // Not: { type: 'custom', name, description, input_schema }
-    const openAIRequest = { ...request };
     if (openAIRequest.tools && Array.isArray(openAIRequest.tools)) {
       openAIRequest.tools = openAIRequest.tools.map(tool => {
         if (tool.type === 'custom' && tool.input_schema) {
@@ -177,21 +183,23 @@ export class UnifiedLLMClient {
       });
     }
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`
-      },
-      body: JSON.stringify(openAIRequest)
-    });
+    // Add reasoning configuration for reasoning models (like ai_request.js)
+    // Check if model supports reasoning
+    const reasoningModels = ['gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'o3', 'o3-mini'];
+    const currentModel = openAIRequest.model || 'gpt-4o-mini';
 
-    if (!response.ok) {
-      const error = await createErrorFromResponse(response, 'openai');
-      throw error;
+    if (reasoningModels.some(m => currentModel.startsWith(m))) {
+      // Add reasoning configuration if not already present
+      if (!openAIRequest.reasoning) {
+        openAIRequest.reasoning = {
+          effort: 'medium',
+          summary: 'auto'
+        };
+      }
     }
 
-    const data = await response.json();
+    // Use OpenAI SDK to call Responses API (like ai_request.js)
+    const data = await this.client.responses.create(openAIRequest);
 
     // Parse function call arguments if they are strings
     if (data.output && Array.isArray(data.output)) {
@@ -302,50 +310,83 @@ export class UnifiedLLMClient {
    */
   async *_responseOpenAIStream(request) {
     try {
-      // OpenAI Responses API streaming
+      // Prepare streaming request (same as non-streaming)
       const streamRequest = { ...request, stream: true };
 
-      const url = 'https://api.openai.com/v1/responses';
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`
-        },
-        body: JSON.stringify(streamRequest)
-      });
-
-      if (!response.ok) {
-        const error = await createErrorFromResponse(response, 'openai');
-        throw error;
+      // 1. Normalize input to Responses API format
+      if (streamRequest.input) {
+        streamRequest.input = normalizeInput(streamRequest.input);
       }
 
-      // Parse Server-Sent Events
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            if (data === '[DONE]') continue;
-
-            try {
-              const chunk = JSON.parse(data);
-              yield chunk;
-            } catch (parseError) {
-              console.error('Error parsing OpenAI stream chunk:', parseError);
-            }
+      // 2. Tools conversion
+      if (streamRequest.tools && Array.isArray(streamRequest.tools)) {
+        streamRequest.tools = streamRequest.tools.map(tool => {
+          if (tool.type === 'custom' && tool.input_schema) {
+            return {
+              type: 'function',
+              name: tool.name,
+              description: tool.description || `Tool: ${tool.name}`,
+              parameters: tool.input_schema
+            };
+          } else if (tool.type === 'function' && tool.function) {
+            return {
+              type: 'function',
+              name: tool.function.name,
+              description: tool.function.description || `Function: ${tool.function.name}`,
+              parameters: tool.function.parameters
+            };
           }
+          return tool;
+        });
+      }
+
+      // Add reasoning configuration for reasoning models
+      const reasoningModels = ['gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'o3', 'o3-mini'];
+      const currentModel = streamRequest.model || 'gpt-4o-mini';
+
+      if (reasoningModels.some(m => currentModel.startsWith(m))) {
+        if (!streamRequest.reasoning) {
+          streamRequest.reasoning = {
+            effort: 'medium',
+            summary: 'auto'
+          };
         }
+      }
+
+      // Use OpenAI SDK for streaming (like ai_request.js)
+      const stream = await this.client.responses.create(streamRequest);
+
+      // Stream the response chunks and convert to consistent format
+      const streamId = `resp_${Date.now()}`;
+      const created = Math.floor(Date.now() / 1000);
+      let currentMessageId = null;
+
+      for await (const chunk of stream) {
+        // Convert OpenAI SDK streaming format to our standard format
+        if (chunk.type === 'response.output_text.delta') {
+          // Text delta
+          yield {
+            id: streamId,
+            object: 'response.delta',
+            created_at: created,
+            model: streamRequest.model,
+            delta: {
+              type: 'output_text',
+              message_id: chunk.item_id,
+              text: chunk.delta
+            }
+          };
+        } else if (chunk.type === 'response.done' || chunk.type === 'response.completed') {
+          // Stream completed
+          yield {
+            id: streamId,
+            object: 'response.done',
+            created_at: created,
+            model: streamRequest.model,
+            status: 'completed'
+          };
+        }
+        // Ignore other chunk types for now (response.created, response.in_progress, etc.)
       }
     } catch (error) {
       throw normalizeError(error, 'openai');

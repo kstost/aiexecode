@@ -26,29 +26,34 @@ export function convertResponsesRequestToOllamaFormat(responsesRequest, baseUrl 
     for (const item of responsesRequest.input) {
       if (item.role && item.content) {
         // Message format
+        // Handle content that might be an array (OpenAI Responses API format)
+        const content = Array.isArray(item.content)
+          ? item.content.map(c => c.type === 'input_text' || c.type === 'text' ? c.text : c).filter(Boolean).join('\n')
+          : item.content;
+
         if (item.role === 'system') {
           // System message
           ollamaRequest.messages.push({
             role: 'system',
-            content: item.content
+            content: content
           });
         } else if (item.role === 'tool') {
           // Tool result
           ollamaRequest.messages.push({
             role: 'tool',
-            content: item.content
+            content: content
           });
         } else if (item.role === 'assistant') {
           // Assistant message
           ollamaRequest.messages.push({
             role: 'assistant',
-            content: item.content
+            content: content
           });
         } else {
           // User message
           ollamaRequest.messages.push({
             role: 'user',
-            content: item.content
+            content: content
           });
         }
       }

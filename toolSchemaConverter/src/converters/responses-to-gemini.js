@@ -24,10 +24,15 @@ export function convertResponsesRequestToGeminiFormat(responsesRequest) {
     for (const item of responsesRequest.input) {
       if (item.role && item.content) {
         // Message format
+        // Handle content that might be an array (OpenAI Responses API format)
+        const content = Array.isArray(item.content)
+          ? item.content.map(c => c.type === 'input_text' || c.type === 'text' ? c.text : c).filter(Boolean).join('\n')
+          : item.content;
+
         if (item.role === 'system') {
           // System messages go to systemInstruction in Gemini
           geminiRequest.systemInstruction = {
-            parts: [{ text: item.content }]
+            parts: [{ text: content }]
           };
         } else if (item.role === 'tool') {
           // Tool result
@@ -50,13 +55,13 @@ export function convertResponsesRequestToGeminiFormat(responsesRequest) {
           // Assistant message
           geminiRequest.contents.push({
             role: 'model',
-            parts: [{ text: item.content }]
+            parts: [{ text: content }]
           });
         } else {
           // User message
           geminiRequest.contents.push({
             role: 'user',
-            parts: [{ text: item.content }]
+            parts: [{ text: content }]
           });
         }
       }

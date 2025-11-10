@@ -58,7 +58,7 @@ OpenAI의 **Responses API**는 최신 LLM 모델(GPT-5, o3 등)을 위해 설계
 
 ## 기본 사용법
 
-### 1. 간단한 텍스트 생성
+### 1. 간단한 텍스트 생성 (문자열 input)
 
 ```javascript
 import { UnifiedLLMClient } from './src/index.js';
@@ -69,13 +69,33 @@ const client = new UnifiedLLMClient({
   model: 'gpt-5'
 });
 
-// Responses API 형식 요청
+// Responses API 형식 요청 - 문자열 input
 const response = await client.response({
-  input: 'What is the meaning of life?',
+  input: 'What is the meaning of life?',  // ✅ 문자열 형태
   max_output_tokens: 100
 });
 
-console.log(response.output[0].content[0].text);
+const messageItem = response.output.find(item => item.type === 'message');
+const text = messageItem?.content[0]?.text || '';
+console.log(text);
+```
+
+### 1-2. 대화 이어가기 (배열 input)
+
+```javascript
+// Responses API 형식 요청 - 배열 input
+const response = await client.response({
+  input: [  // ✅ 배열 형태 (대화 히스토리)
+    { role: 'user', content: 'My name is Alice' },
+    { role: 'assistant', content: 'Hello Alice!' },
+    { role: 'user', content: 'What is my name?' }
+  ],
+  max_output_tokens: 100
+});
+
+const messageItem = response.output.find(item => item.type === 'message');
+const text = messageItem?.content[0]?.text || '';
+console.log(text);  // "Your name is Alice."
 ```
 
 ### 2. 제공자별 사용 예시
