@@ -499,7 +499,13 @@ export async function request(taskName, requestPayload) {
         await logger(`${taskName}_REQ`, originalRequest, provider);
         debugLog(`[request] Request logged - calling LLM API`);
 
-        response = await client.response(originalRequest);
+        // AbortController의 signal을 options로 전달
+        const requestOptions = {
+            signal: currentAbortController.signal
+        };
+        debugLog(`[request] Calling client.response with abort signal`);
+
+        response = await client.response(originalRequest, requestOptions);
         debugLog(`[request] Response received - id: ${response?.id}, status: ${response?.status}, output items: ${response?.output?.length || 0}`);
 
         // 원본 응답을 깊은 복사로 보존 (이후 수정으로부터 보호)

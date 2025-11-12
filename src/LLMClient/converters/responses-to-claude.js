@@ -2,34 +2,20 @@
  * Convert Responses API format to Claude format
  */
 
+import { getMaxTokens } from '../../config/ai_models.js';
+
 /**
  * Convert Responses API request to Claude format
  * @param {Object} responsesRequest - Responses API format request
  * @returns {Object} Claude format request
  */
 export function convertResponsesRequestToClaudeFormat(responsesRequest) {
-  /*
-    claude-sonnet-4-5 64000
-    claude-3-haiku  4096
-    claude-4-5-haiku  64000
-  */
-  const modelMaxTokensMap = {
-    'claude-sonnet-4-20250514': 64000,
-    'claude-3-7-sonnet-20250219': 64000,
-    'claude-opus-4-20250514': 4096 * 2,
-    'claude-3-5-haiku-20241022': 4096 * 2,
-    'claude-3-haiku-20240307': 4096,
-  };
-
   const model = responsesRequest.model;
   if (!model) {
     throw new Error('Model name is required');
   }
 
-  const defaultMaxTokens = modelMaxTokensMap[model];// || 999999999999;
-  if (!defaultMaxTokens) {
-    throw new Error(`Unsupported model: ${model}. Supported models are: ${Object.keys(modelMaxTokensMap).join(', ')}`);
-  }
+  const defaultMaxTokens = getMaxTokens(model);
 
   const claudeRequest = {
     model: model,
@@ -259,15 +245,10 @@ export function convertResponsesRequestToClaudeFormat(responsesRequest) {
     });
   }
 
-  // Temperature (Claude supports this, Responses API may not send it)
-  if (responsesRequest.temperature !== undefined) {
-    claudeRequest.temperature = responsesRequest.temperature;
-  }
+  // Temperature - always set to 0 for Claude
+  claudeRequest.temperature = 0;
 
-  // Top-p (Claude supports this)
-  if (responsesRequest.top_p !== undefined) {
-    claudeRequest.top_p = responsesRequest.top_p;
-  }
+  // Top-p - do not set for Claude (removed)
 
   // Tool choice (Responses API to Claude)
   if (responsesRequest.tool_choice !== undefined) {

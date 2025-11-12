@@ -136,9 +136,11 @@ export class UnifiedLLMClient {
   /**
    * Create a response (Responses API-compatible interface)
    * @param {Object} request - Responses API format request
+   * @param {Object} options - Additional options
+   * @param {AbortSignal} options.signal - AbortSignal for cancellation
    * @returns {Promise<Object>|AsyncGenerator} Responses API format response or stream
    */
-  async response(request) {
+  async response(request, options = {}) {
     // Set default model if not provided
     if (!request.model && this.defaultModel) {
       request.model = this.defaultModel;
@@ -204,26 +206,26 @@ export class UnifiedLLMClient {
 
     switch (effectiveProvider) {
       case 'openai':
-        return isStreaming ? this._responseOpenAIStream(request) : await this._responseOpenAI(request);
+        return isStreaming ? this._responseOpenAIStream(request, options) : await this._responseOpenAI(request, options);
 
       case 'claude':
-        return isStreaming ? this._responseClaudeStream(request) : await this._responseClaude(request);
+        return isStreaming ? this._responseClaudeStream(request, options) : await this._responseClaude(request, options);
 
       case 'gemini':
-        return isStreaming ? this._responseGeminiStream(request) : await this._responseGemini(request);
+        return isStreaming ? this._responseGeminiStream(request, options) : await this._responseGemini(request, options);
 
       case 'ollama':
-        return isStreaming ? this._responseOllamaStream(request) : await this._responseOllama(request);
+        return isStreaming ? this._responseOllamaStream(request, options) : await this._responseOllama(request, options);
 
       default:
         throw new Error(`Unsupported provider: ${this.provider}`);
     }
   }
 
-  async _responseOpenAI(request) {
+  async _responseOpenAI(request, options = {}) {
     try {
       // Call OpenAI Responses API directly
-      const response = await this._callOpenAIResponsesAPI(request);
+      const response = await this._callOpenAIResponsesAPI(request, options);
       // Log response payload
       this._logPayload(response, 'RES', 'openai');
       return response;
@@ -232,7 +234,7 @@ export class UnifiedLLMClient {
     }
   }
 
-  async _callOpenAIResponsesAPI(request) {
+  async _callOpenAIResponsesAPI(request, options = {}) {
     // Convert to proper Responses API format (like ai_request.js)
     const openAIRequest = { ...request };
 
@@ -300,7 +302,11 @@ export class UnifiedLLMClient {
     this._logPayload(openAIRequest, 'REQ-OPENAI-RAW', 'openai');
 
     // Use OpenAI SDK to call Responses API (like ai_request.js)
-    const data = await this.client.responses.create(openAIRequest);
+    const createOptions = {};
+    if (options.signal) {
+      createOptions.signal = options.signal;
+    }
+    const data = await this.client.responses.create(openAIRequest, createOptions);
 
     // Log raw OpenAI API response before normalization
     this._logPayload(data, 'RES-OPENAI-RAW', 'openai');
@@ -413,12 +419,93 @@ export class UnifiedLLMClient {
     return normalizedResponse;
   }
 
-  async _responseClaude(request) {
+  async _responseClaude(request, options = {}) {
     try {
       const claudeRequest = convertResponsesRequestToClaudeFormat(request);
       // Log raw request payload before API call
       this._logPayload(claudeRequest, 'REQ-CLAUDE-RAW', 'claude');
-      const claudeResponse = await this.client.messages.create(claudeRequest);
+
+      // Use streaming internally to get the response
+      const streamOptions = {};
+      if (options.signal) {
+        streamOptions.signal = options.signal;
+      }
+      const stream = await this.client.messages.stream(claudeRequest, streamOptions);
+
+      // Accumulate streaming response into a complete response object
+      let messageId = null;
+      let model = request.model || 'claude-sonnet-4-5';
+      let stopReason = null;
+      let usage = { input_tokens: 0, output_tokens: 0 };
+      const contentBlocks = [];
+      let currentTextBlock = null;
+      let currentToolBlock = null;
+
+      for await (const event of stream) {
+        // Handle different stream event types
+        if (event.type === 'message_start') {
+          messageId = event.message.id;
+          model = event.message.model;
+          usage.input_tokens = event.message.usage?.input_tokens || 0;
+        } else if (event.type === 'content_block_start') {
+          if (event.content_block?.type === 'text') {
+            currentTextBlock = { type: 'text', text: '' };
+          } else if (event.content_block?.type === 'tool_use') {
+            currentToolBlock = {
+              type: 'tool_use',
+              id: event.content_block.id,
+              name: event.content_block.name,
+              input: {}
+            };
+          }
+        } else if (event.type === 'content_block_delta') {
+          if (event.delta?.type === 'text_delta') {
+            if (currentTextBlock) {
+              currentTextBlock.text += event.delta.text;
+            }
+          } else if (event.delta?.type === 'input_json_delta') {
+            if (currentToolBlock) {
+              // Accumulate JSON string for tool input
+              if (!currentToolBlock._inputJson) {
+                currentToolBlock._inputJson = '';
+              }
+              currentToolBlock._inputJson += event.delta.partial_json;
+            }
+          }
+        } else if (event.type === 'content_block_stop') {
+          if (currentTextBlock) {
+            contentBlocks.push(currentTextBlock);
+            currentTextBlock = null;
+          } else if (currentToolBlock) {
+            // Parse accumulated JSON for tool input
+            if (currentToolBlock._inputJson) {
+              try {
+                currentToolBlock.input = JSON.parse(currentToolBlock._inputJson);
+              } catch (e) {
+                currentToolBlock.input = {};
+              }
+              delete currentToolBlock._inputJson;
+            }
+            contentBlocks.push(currentToolBlock);
+            currentToolBlock = null;
+          }
+        } else if (event.type === 'message_delta') {
+          stopReason = event.delta?.stop_reason || stopReason;
+          usage.output_tokens = event.usage?.output_tokens || usage.output_tokens;
+        }
+      }
+
+      // Construct the complete Claude response object
+      const claudeResponse = {
+        id: messageId || `msg_${Date.now()}`,
+        type: 'message',
+        role: 'assistant',
+        content: contentBlocks,
+        model: model,
+        stop_reason: stopReason || 'end_turn',
+        usage: usage
+      };
+
       // Log raw Claude API response before conversion
       this._logPayload(claudeResponse, 'RES-CLAUDE-RAW', 'claude');
       const response = convertClaudeResponseToResponsesFormat(claudeResponse, request.model, request);
@@ -430,7 +517,7 @@ export class UnifiedLLMClient {
     }
   }
 
-  async _responseGemini(request) {
+  async _responseGemini(request, options = {}) {
     try {
       const geminiRequest = convertResponsesRequestToGeminiFormat(request);
       // Log raw request payload before API call
@@ -462,6 +549,11 @@ export class UnifiedLLMClient {
 
       if (geminiRequest.toolConfig) {
         generateRequest.toolConfig = geminiRequest.toolConfig;
+      }
+
+      // Add abort signal if provided
+      if (options.signal) {
+        generateRequest.signal = options.signal;
       }
 
       const result = await model.generateContent(generateRequest);
@@ -499,19 +591,26 @@ export class UnifiedLLMClient {
     }
   }
 
-  async _responseOllama(request) {
+  async _responseOllama(request, options = {}) {
     try {
       const { url, request: ollamaRequest } = convertResponsesRequestToOllamaFormat(request, this.baseUrl);
       // Log raw request payload before API call
       this._logPayload(ollamaRequest, 'REQ-RAW', 'ollama');
 
-      const response = await fetch(url, {
+      const fetchOptions = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(ollamaRequest)
-      });
+      };
+
+      // Add abort signal if provided
+      if (options.signal) {
+        fetchOptions.signal = options.signal;
+      }
+
+      const response = await fetch(url, fetchOptions);
 
       if (!response.ok) {
         const error = await createErrorFromResponse(response, 'ollama');
@@ -537,9 +636,10 @@ export class UnifiedLLMClient {
   /**
    * OpenAI streaming response
    * @param {Object} request - Responses API format request
+   * @param {Object} options - Additional options
    * @returns {AsyncGenerator} Responses API format stream
    */
-  async *_responseOpenAIStream(request) {
+  async *_responseOpenAIStream(request, options = {}) {
     const chunks = []; // Collect all chunks for logging
     try {
       // Prepare streaming request (same as non-streaming)
@@ -597,7 +697,11 @@ export class UnifiedLLMClient {
       this._logPayload(streamRequest, 'REQ-RAW', 'openai');
 
       // Use OpenAI SDK for streaming (like ai_request.js)
-      const stream = await this.client.responses.create(streamRequest);
+      const createOptions = {};
+      if (options.signal) {
+        createOptions.signal = options.signal;
+      }
+      const stream = await this.client.responses.create(streamRequest, createOptions);
 
       // Stream the response chunks and convert to consistent format
       const streamId = `resp_${Date.now()}`;
@@ -645,15 +749,21 @@ export class UnifiedLLMClient {
   /**
    * Claude streaming response
    * @param {Object} request - Responses API format request
+   * @param {Object} options - Additional options
    * @returns {AsyncGenerator} Responses API format stream
    */
-  async *_responseClaudeStream(request) {
+  async *_responseClaudeStream(request, options = {}) {
     const chunks = []; // Collect all chunks for logging
     try {
       const claudeRequest = convertResponsesRequestToClaudeFormat(request);
       // Log raw request payload before API call
       this._logPayload(claudeRequest, 'REQ-RAW', 'claude');
-      const stream = await this.client.messages.stream(claudeRequest);
+
+      const streamOptions = {};
+      if (options.signal) {
+        streamOptions.signal = options.signal;
+      }
+      const stream = await this.client.messages.stream(claudeRequest, streamOptions);
 
       const streamId = `resp_${Date.now()}`;
       const created = Math.floor(Date.now() / 1000);
@@ -698,9 +808,10 @@ export class UnifiedLLMClient {
   /**
    * Gemini streaming response
    * @param {Object} request - Responses API format request
+   * @param {Object} options - Additional options
    * @returns {AsyncGenerator} Responses API format stream
    */
-  async *_responseGeminiStream(request) {
+  async *_responseGeminiStream(request, options = {}) {
     const chunks = []; // Collect all chunks for logging
     try {
       const geminiRequest = convertResponsesRequestToGeminiFormat(request);
@@ -730,6 +841,11 @@ export class UnifiedLLMClient {
 
       if (geminiRequest.toolConfig) {
         generateRequest.toolConfig = geminiRequest.toolConfig;
+      }
+
+      // Add abort signal if provided
+      if (options.signal) {
+        generateRequest.signal = options.signal;
       }
 
       const result = await model.generateContentStream(generateRequest);
@@ -778,9 +894,10 @@ export class UnifiedLLMClient {
   /**
    * Ollama streaming response
    * @param {Object} request - Responses API format request
+   * @param {Object} options - Additional options
    * @returns {AsyncGenerator} Responses API format stream
    */
-  async *_responseOllamaStream(request) {
+  async *_responseOllamaStream(request, options = {}) {
     const chunks = []; // Collect all chunks for logging
     try {
       const { url, request: ollamaRequest } = convertResponsesRequestToOllamaFormat(request, this.baseUrl);
@@ -791,13 +908,20 @@ export class UnifiedLLMClient {
       // Log raw request payload before API call
       this._logPayload(ollamaRequest, 'REQ-RAW', 'ollama');
 
-      const response = await fetch(url, {
+      const fetchOptions = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(ollamaRequest)
-      });
+      };
+
+      // Add abort signal if provided
+      if (options.signal) {
+        fetchOptions.signal = options.signal;
+      }
+
+      const response = await fetch(url, fetchOptions);
 
       if (!response.ok) {
         throw new Error(`Ollama API error: ${response.statusText}`);
