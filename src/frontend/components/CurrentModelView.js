@@ -82,39 +82,6 @@ export function CurrentModelView({ provider, modelId, modelInfo }) {
                     React.createElement(Text, {
                         color: 'white'
                     }, modelInfo.name)
-                ),
-
-                React.createElement(Text, null),
-
-                // Description
-                React.createElement(Box, { flexDirection: 'column' },
-                    React.createElement(Text, {
-                        bold: true,
-                        color: theme.text.secondary
-                    }, 'Description:'),
-                    React.createElement(Text, {
-                        color: theme.text.secondary,
-                        dimColor: true
-                    }, `  ${modelInfo.description}`)
-                ),
-
-                modelInfo.pricing && React.createElement(React.Fragment, null,
-                    React.createElement(Text, null),
-
-                    // Pricing
-                    React.createElement(Box, { flexDirection: 'row', gap: 1 },
-                        React.createElement(Text, {
-                            bold: true,
-                            color: theme.text.secondary
-                        }, 'Pricing:'),
-                        React.createElement(Text, {
-                            color: 'green'
-                        }, `💰 $${modelInfo.pricing.input}/$${modelInfo.pricing.output}`),
-                        React.createElement(Text, {
-                            dimColor: true,
-                            italic: true
-                        }, '(input/output per 1M tokens)')
-                    )
                 )
             )
         ),

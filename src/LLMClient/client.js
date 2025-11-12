@@ -250,9 +250,11 @@ export class UnifiedLLMClient {
     // Not: { type: 'custom', name, description, input_schema }
     if (openAIRequest.tools && Array.isArray(openAIRequest.tools)) {
       openAIRequest.tools = openAIRequest.tools.map(tool => {
+        let convertedTool;
+
         if (tool.type === 'custom' && tool.input_schema) {
           // Convert custom format to OpenAI Responses API format
-          return {
+          convertedTool = {
             type: 'function',
             name: tool.name,
             description: tool.description || `Tool: ${tool.name}`,
@@ -260,15 +262,22 @@ export class UnifiedLLMClient {
           };
         } else if (tool.type === 'function' && tool.function) {
           // Convert Chat Completions format to Responses API format
-          return {
+          convertedTool = {
             type: 'function',
             name: tool.function.name,
             description: tool.function.description || `Function: ${tool.function.name}`,
             parameters: tool.function.parameters
           };
+        } else {
+          // Already in correct format or pass through
+          convertedTool = { ...tool };
         }
-        // Already in correct format or pass through
-        return tool;
+
+        // Remove 'strict' field to prevent OpenAI SDK from auto-modifying 'required' fields
+        // This ensures all providers receive the same tool schema
+        delete convertedTool.strict;
+
+        return convertedTool;
       });
     }
 
@@ -288,10 +297,13 @@ export class UnifiedLLMClient {
     }
 
     // Log raw request payload before API call
-    this._logPayload(openAIRequest, 'REQ-RAW', 'openai');
+    this._logPayload(openAIRequest, 'REQ-OPENAI-RAW', 'openai');
 
     // Use OpenAI SDK to call Responses API (like ai_request.js)
     const data = await this.client.responses.create(openAIRequest);
+
+    // Log raw OpenAI API response before normalization
+    this._logPayload(data, 'RES-OPENAI-RAW', 'openai');
 
     // Ensure all required fields are present and properly formatted
     const normalizedResponse = {
@@ -405,8 +417,10 @@ export class UnifiedLLMClient {
     try {
       const claudeRequest = convertResponsesRequestToClaudeFormat(request);
       // Log raw request payload before API call
-      this._logPayload(claudeRequest, 'REQ-RAW', 'claude');
+      this._logPayload(claudeRequest, 'REQ-CLAUDE-RAW', 'claude');
       const claudeResponse = await this.client.messages.create(claudeRequest);
+      // Log raw Claude API response before conversion
+      this._logPayload(claudeResponse, 'RES-CLAUDE-RAW', 'claude');
       const response = convertClaudeResponseToResponsesFormat(claudeResponse, request.model, request);
       // Log response payload
       this._logPayload(response, 'RES', 'claude');
@@ -453,6 +467,13 @@ export class UnifiedLLMClient {
       const result = await model.generateContent(generateRequest);
       const response = await result.response;
 
+      // Log raw Gemini response for debugging
+      this._logPayload({
+        candidates: response.candidates,
+        usageMetadata: response.usageMetadata,
+        promptFeedback: response.promptFeedback
+      }, 'RES-GEMINI-RAW', 'gemini');
+
       // Convert to Responses API format
       const convertedResponse = convertGeminiResponseToResponsesFormat({
         candidates: [
@@ -467,6 +488,13 @@ export class UnifiedLLMClient {
       this._logPayload(convertedResponse, 'RES', 'gemini');
       return convertedResponse;
     } catch (error) {
+      // Log error for debugging
+      this._logPayload({
+        error_message: error.message,
+        error_stack: error.stack,
+        error_name: error.name,
+        full_error: JSON.parse(JSON.stringify(error, Object.getOwnPropertyNames(error)))
+      }, 'ERROR-GEMINI', 'gemini');
       throw normalizeError(error, 'gemini');
     }
   }
@@ -525,22 +553,30 @@ export class UnifiedLLMClient {
       // 2. Tools conversion
       if (streamRequest.tools && Array.isArray(streamRequest.tools)) {
         streamRequest.tools = streamRequest.tools.map(tool => {
+          let convertedTool;
+
           if (tool.type === 'custom' && tool.input_schema) {
-            return {
+            convertedTool = {
               type: 'function',
               name: tool.name,
               description: tool.description || `Tool: ${tool.name}`,
               parameters: tool.input_schema
             };
           } else if (tool.type === 'function' && tool.function) {
-            return {
+            convertedTool = {
               type: 'function',
               name: tool.function.name,
               description: tool.function.description || `Function: ${tool.function.name}`,
               parameters: tool.function.parameters
             };
+          } else {
+            convertedTool = { ...tool };
           }
-          return tool;
+
+          // Remove 'strict' field to prevent OpenAI SDK from auto-modifying 'required' fields
+          delete convertedTool.strict;
+
+          return convertedTool;
         });
       }
 

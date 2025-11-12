@@ -3,7 +3,7 @@ import { homedir } from 'os';
 import { join, dirname } from 'path';
 import { safeReadFile, safeWriteFile, safeMkdir, safeReaddir, safeStat, safeCopyFile } from './safe_fs.js';
 import { fileURLToPath } from 'url';
-import { DEFAULT_OPENAI_MODEL } from '../config/openai_models.js';
+import { DEFAULT_MODEL } from '../config/ai_models.js';
 
 // Get project root directory (this file is in src/util/, so go up 2 levels)
 const __filename = fileURLToPath(import.meta.url);
@@ -38,12 +38,13 @@ export const CONFIG_DIR = join(getHomeDirectory(), '.aiexe');
 export const SETTINGS_FILE = join(CONFIG_DIR, 'settings.json');
 export const MCP_CONFIG_FILE = join(CONFIG_DIR, 'mcp_config.json');
 export const PAYLOAD_LOG_DIR = join(CONFIG_DIR, 'payload_log');
+export const PAYLOAD_LLM_LOG_DIR = join(CONFIG_DIR, 'payload_LLM_log');
 export const DEBUG_LOG_DIR = join(CONFIG_DIR, 'debuglog');
 export const DEBUG_LOG_FILE = join(CONFIG_DIR, 'debug.txt'); // Deprecated: 호환성을 위해 유지
 const DEFAULT_SETTINGS = {
-    OPENAI_API_KEY: '',
-    OPENAI_MODEL: DEFAULT_OPENAI_MODEL,
-    OPENAI_REASONING_EFFORT: 'medium', // 'minimal', 'low', 'medium', 'high'
+    API_KEY: '',
+    MODEL: DEFAULT_MODEL,
+    REASONING_EFFORT: 'medium', // 'minimal', 'low', 'medium', 'high'
     // 도구 활성화 옵션
     TOOLS_ENABLED: {
         edit_file_range: false,  // 기본적으로 비활성화 (edit_file_replace 사용 권장)
@@ -125,4 +126,25 @@ export async function saveSettings(settings) {
         // Failed to save settings - silently ignore
         throw error;
     }
+}
+
+/**
+ * API 키의 접두어를 기반으로 발급처를 판단합니다.
+ * @param {string} apiKey - API 키 문자열
+ * @returns {string|null} 발급처 이름 ("Google", "OpenAI", "Anthropic") 또는 null (알 수 없는 경우)
+ */
+export function APIKeyIssuedFrom(apiKey) {
+    if (!apiKey || typeof apiKey !== 'string') {
+        return null;
+    }
+
+    if (apiKey.startsWith('AIzaSy')) {
+        return 'Google';
+    } else if (apiKey.startsWith('sk-proj-')) {
+        return 'OpenAI';
+    } else if (apiKey.startsWith('sk-ant-')) {
+        return 'Anthropic';
+    }
+
+    return null;
 }

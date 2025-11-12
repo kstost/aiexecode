@@ -282,24 +282,26 @@ if (dependencyCheck.warnings && dependencyCheck.warnings.length > 0) {
 }
 
 // 환경변수 설정
-if (!process.env.OPENAI_API_KEY && settings?.OPENAI_API_KEY) {
-    process.env.OPENAI_API_KEY = settings.OPENAI_API_KEY;
+if (!process.env.API_KEY && settings?.API_KEY) {
+    process.env.API_KEY = settings.API_KEY;
 }
-if (!process.env.OPENAI_MODEL && settings?.OPENAI_MODEL) {
-    process.env.OPENAI_MODEL = settings.OPENAI_MODEL;
+if (!process.env.MODEL && settings?.MODEL) {
+    process.env.MODEL = settings.MODEL;
 }
-if (!process.env.OPENAI_REASONING_EFFORT && settings?.OPENAI_REASONING_EFFORT) {
-    process.env.OPENAI_REASONING_EFFORT = settings.OPENAI_REASONING_EFFORT;
+if (!process.env.REASONING_EFFORT && settings?.REASONING_EFFORT) {
+    process.env.REASONING_EFFORT = settings.REASONING_EFFORT;
 }
 
 // 최종 검증
-if (!process.env.OPENAI_API_KEY) {
-    console.log(chalk.red('\nStartup Failed: Missing OpenAI API Key\n'));
+if (!process.env.API_KEY) {
+    console.log(chalk.red('\nStartup Failed: Missing API Key\n'));
     console.log(chalk.yellow('Reason:'));
-    console.log('  OPENAI_API_KEY is not configured in the settings.');
+    console.log('  API_KEY is not configured in the settings.');
     console.log(chalk.yellow('\nSolution:'));
-    console.log('  1. Obtain an API key from OpenAI:');
-    console.log(chalk.cyan('     https://platform.openai.com/account/api-keys'));
+    console.log('  1. Obtain an API key from your provider (OpenAI, Google, Anthropic):');
+    console.log(chalk.cyan('     OpenAI: https://platform.openai.com/account/api-keys'));
+    console.log(chalk.cyan('     Google: https://makersuite.google.com/app/apikey'));
+    console.log(chalk.cyan('     Anthropic: https://console.anthropic.com/'));
     console.log(`  2. Add the API key to your settings file:`);
     console.log(chalk.cyan(`     ${SETTINGS_FILE}`));
     console.log('  3. Or run the setup wizard again by deleting the settings file');

@@ -3,6 +3,192 @@
  */
 
 /**
+ * Remove markdown code block wrapper from text
+ * Handles all possible cases mechanically without regex
+ * @param {string} text - Raw text possibly wrapped in markdown code block
+ * @returns {string} Cleaned text
+ */
+function removeMarkdownCodeBlock(text) {
+  // Case 1: null, undefined, empty string, non-string
+  if (!text || typeof text !== 'string') {
+    return text;
+  }
+
+  let result = text;
+  let startIndex = 0;
+  let endIndex = result.length;
+
+  // ============================================
+  // PHASE 1: Process opening ``` marker
+  // ============================================
+
+  // Case 2: Text doesn't start with ``` at all
+  if (!result.startsWith('```')) {
+    // No opening marker - return as is (trimmed)
+    return result.trim();
+  }
+
+  // Case 3: Text starts with ``` - remove it
+  startIndex = 3;
+
+  // Now check what comes after ```
+  // Possible cases:
+  // - ```\n... (no language identifier)
+  // - ```json\n... (with language identifier)
+  // - ```json ... (language identifier with spaces)
+  // - ``` json\n... (spaces before language identifier)
+  // - ```{... (no newline, content starts immediately - edge case)
+
+  // Skip any spaces immediately after ```
+  while (startIndex < endIndex && result[startIndex] === ' ') {
+    startIndex++;
+  }
+
+  // Case 4: After ``` and optional spaces, look for newline
+  const firstNewlinePos = result.indexOf('\n', startIndex);
+
+  if (firstNewlinePos === -1) {
+    // Case 5: No newline found after ``` - entire rest is content
+    // Example: ```{"key":"value"}``` or ```{"key":"value"}
+    // Content starts right after ``` (and any spaces we skipped)
+    // Don't advance startIndex further - keep content starting position
+  } else {
+    // Case 6: Newline exists - check what's between ``` and \n
+    const betweenBackticksAndNewline = result.substring(startIndex, firstNewlinePos);
+
+    // Trim to check if it's a language identifier
+    const trimmed = betweenBackticksAndNewline.trim();
+
+    if (trimmed.length === 0) {
+      // Case 7: Nothing between ``` and \n (or only whitespace)
+      // Example: ```\n... or ```  \n...
+      // Content starts after the newline
+      startIndex = firstNewlinePos + 1;
+    } else {
+      // Case 8: Something exists between ``` and \n
+      // Check if it looks like a language identifier (alphanumeric, underscore, dash only)
+      let isLanguageIdentifier = true;
+      for (let i = 0; i < trimmed.length; i++) {
+        const char = trimmed[i];
+        const isValid = (char >= 'a' && char <= 'z') ||
+                       (char >= 'A' && char <= 'Z') ||
+                       (char >= '0' && char <= '9') ||
+                       char === '_' || char === '-';
+        if (!isValid) {
+          isLanguageIdentifier = false;
+          break;
+        }
+      }
+
+      if (isLanguageIdentifier) {
+        // Case 9: It's a language identifier like "json", "javascript", etc.
+        // Skip it and the newline - content starts after newline
+        startIndex = firstNewlinePos + 1;
+      } else {
+        // Case 10: It's actual content (contains special chars like {, [, etc.)
+        // Example: ```{"key": "value"}\n...
+        // Keep this content - don't skip anything
+        // startIndex already points to start of this content
+      }
+    }
+  }
+
+  // ============================================
+  // PHASE 2: Process closing ``` marker
+  // ============================================
+
+  // Work backwards from end to find closing ```
+
+  // Case 11: Find where actual content ends (before any trailing ``` and whitespace)
+
+  // Step 1: Skip trailing whitespace from the end
+  let checkPos = endIndex - 1;
+  while (checkPos >= startIndex && (result[checkPos] === ' ' || result[checkPos] === '\t' ||
+         result[checkPos] === '\n' || result[checkPos] === '\r')) {
+    checkPos--;
+  }
+
+  // Step 2: Check if we have ``` at this position (working backwards)
+  if (checkPos >= startIndex + 2 &&
+      result[checkPos] === '`' &&
+      result[checkPos - 1] === '`' &&
+      result[checkPos - 2] === '`') {
+    // Case 12: Found closing ``` marker
+    // Move back before the ```
+    endIndex = checkPos - 2;
+
+    // Also trim any whitespace before the ```
+    while (endIndex > startIndex && (result[endIndex - 1] === ' ' || result[endIndex - 1] === '\t' ||
+           result[endIndex - 1] === '\n' || result[endIndex - 1] === '\r')) {
+      endIndex--;
+    }
+  } else {
+    // Case 13: No closing ``` found
+    // Use position after trimming trailing whitespace
+    // Add 1 because checkPos is the last non-whitespace character's index
+    endIndex = checkPos + 1;
+  }
+
+  // ============================================
+  // PHASE 3: Extract and return cleaned content
+  // ============================================
+
+  // Case 14: Extract the content between processed boundaries
+  if (startIndex >= endIndex) {
+    // Case 15: Nothing left after processing (empty content between markers)
+    return '';
+  }
+
+  result = result.substring(startIndex, endIndex);
+
+  // Case 16: Final trim to remove any remaining edge whitespace
+  return result.trim();
+}
+
+/**
+ * Remove Gemini-incompatible fields from JSON Schema
+ * @param {Object} schema - JSON Schema object
+ * @returns {Object} Cleaned schema
+ */
+function cleanSchemaForGemini(schema) {
+  if (!schema || typeof schema !== 'object') {
+    return schema;
+  }
+
+  // Deep clone to avoid mutating original
+  const cleaned = JSON.parse(JSON.stringify(schema));
+
+  // Recursive function to clean schema objects
+  function cleanObject(obj) {
+    if (!obj || typeof obj !== 'object') {
+      return;
+    }
+
+    // Remove Gemini-incompatible fields
+    delete obj.additionalProperties;
+    delete obj.$schema;
+    delete obj.$id;
+    delete obj.$ref;
+    delete obj.definitions;
+    delete obj.$defs;
+
+    // Recursively clean nested objects
+    for (const key in obj) {
+      if (typeof obj[key] === 'object' && obj[key] !== null) {
+        if (Array.isArray(obj[key])) {
+          obj[key].forEach(item => cleanObject(item));
+        } else {
+          cleanObject(obj[key]);
+        }
+      }
+    }
+  }
+
+  cleanObject(cleaned);
+  return cleaned;
+}
+
+/**
  * Convert Responses API request to Gemini format
  * @param {Object} responsesRequest - Responses API format request
  * @returns {Object} Gemini format request
@@ -55,13 +241,26 @@ export function convertResponsesRequestToGeminiFormat(responsesRequest) {
           });
         } else if (item.type === 'function_call_output') {
           // Function call output - convert to functionResponse
+          let response;
+          if (typeof item.output === 'string') {
+            try {
+              // Try to parse as JSON
+              response = JSON.parse(item.output);
+            } catch {
+              // If not valid JSON, wrap plain text in object
+              response = { result: item.output };
+            }
+          } else {
+            response = item.output;
+          }
+
           geminiRequest.contents.push({
             role: 'function',
             parts: [
               {
                 functionResponse: {
                   name: geminiRequest.contents[geminiRequest.contents.length - 1]?.parts?.[0]?.functionCall?.name || 'unknown',
-                  response: typeof item.output === 'string' ? JSON.parse(item.output) : item.output
+                  response: response
                 }
               }
             ]
@@ -88,13 +287,26 @@ export function convertResponsesRequestToGeminiFormat(responsesRequest) {
           const lastContent = geminiRequest.contents[geminiRequest.contents.length - 1];
           if (lastContent && lastContent.role === 'model') {
             // Add function response
+            let response;
+            if (typeof item.content === 'string') {
+              try {
+                // Try to parse as JSON
+                response = JSON.parse(item.content);
+              } catch {
+                // If not valid JSON, wrap plain text in object
+                response = { result: item.content };
+              }
+            } else {
+              response = item.content;
+            }
+
             geminiRequest.contents.push({
               role: 'function',
               parts: [
                 {
                   functionResponse: {
                     name: item.name,
-                    response: typeof item.content === 'string' ? JSON.parse(item.content) : item.content
+                    response: response
                   }
                 }
               ]
@@ -164,55 +376,74 @@ export function convertResponsesRequestToGeminiFormat(responsesRequest) {
     geminiRequest.tools = [
       {
         functionDeclarations: responsesRequest.tools.map(tool => {
+          let parameters;
+
           if (tool.type === 'function' && tool.function) {
             // Chat Completions format with nested function object
-            return {
-              name: tool.function.name,
-              description: tool.function.description || `Function: ${tool.function.name}`,
-              parameters: tool.function.parameters || {
-                type: 'object',
-                properties: {}
-              }
+            parameters = tool.function.parameters || {
+              type: 'object',
+              properties: {}
             };
           } else if (tool.type === 'function' && !tool.function) {
             // Chat Completions format without nested function object
-            return {
-              name: tool.name,
-              description: tool.description || `Function: ${tool.name}`,
-              parameters: tool.parameters || {
-                type: 'object',
-                properties: {}
-              }
+            parameters = tool.parameters || {
+              type: 'object',
+              properties: {}
             };
           } else if (tool.type === 'custom') {
             // Responses API format
-            return {
-              name: tool.name,
-              description: tool.description || `Tool: ${tool.name}`,
-              parameters: tool.input_schema || {
-                type: 'object',
-                properties: {}
-              }
+            parameters = tool.input_schema || {
+              type: 'object',
+              properties: {}
             };
           } else if (tool.name && tool.description) {
             // Already in Gemini format (name, description, parameters)
+            parameters = tool.parameters || {
+              type: 'object',
+              properties: {}
+            };
+          } else {
+            // Fallback: extract name, description, parameters
+            parameters = tool.parameters || tool.input_schema || {
+              type: 'object',
+              properties: {}
+            };
+          }
+
+          // Clean parameters for Gemini compatibility
+          const cleanedParameters = cleanSchemaForGemini(parameters);
+
+          // Build function declaration
+          if (tool.type === 'function' && tool.function) {
+            return {
+              name: tool.function.name,
+              description: tool.function.description || `Function: ${tool.function.name}`,
+              parameters: cleanedParameters
+            };
+          } else if (tool.type === 'function' && !tool.function) {
+            return {
+              name: tool.name,
+              description: tool.description || `Function: ${tool.name}`,
+              parameters: cleanedParameters
+            };
+          } else if (tool.type === 'custom') {
+            return {
+              name: tool.name,
+              description: tool.description || `Tool: ${tool.name}`,
+              parameters: cleanedParameters
+            };
+          } else if (tool.name && tool.description) {
             return {
               name: tool.name,
               description: tool.description,
-              parameters: tool.parameters || {
-                type: 'object',
-                properties: {}
-              }
+              parameters: cleanedParameters
             };
           }
-          // Fallback: extract name, description, parameters
+
           return {
             name: tool.name || 'unknown',
             description: tool.description || 'No description',
-            parameters: tool.parameters || tool.input_schema || {
-              type: 'object',
-              properties: {}
-            }
+            parameters: cleanedParameters
           };
         })
       }
@@ -287,17 +518,32 @@ export function convertGeminiResponseToResponsesFormat(geminiResponse, model = '
     const candidate = geminiResponse.candidates[0];
 
     if (candidate.content && candidate.content.parts) {
-      const messageContent = [];
-
+      // First pass: collect raw text
       for (const part of candidate.content.parts) {
         if (part.text) {
-          // Text content
+          outputText += part.text;
+        }
+      }
+
+      // Clean up markdown code blocks from output text (Gemini often wraps JSON in ```json...```)
+      let cleanedText = outputText;
+      if (originalRequest.text?.format?.type === 'json_schema') {
+        cleanedText = removeMarkdownCodeBlock(outputText);
+      }
+
+      // Second pass: build message content with cleaned text
+      const messageContent = [];
+      let hasText = false;
+
+      for (const part of candidate.content.parts) {
+        if (part.text && !hasText) {
+          // Add cleaned text as a single content block (only once)
           messageContent.push({
             type: 'output_text',
-            text: part.text,
+            text: cleanedText,
             annotations: []
           });
-          outputText += part.text;
+          hasText = true;
         } else if (part.functionCall) {
           // Function call - add as separate function_call item
           const callId = `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -336,6 +582,12 @@ export function convertGeminiResponseToResponsesFormat(geminiResponse, model = '
     });
   }
 
+  // Use cleaned text for output_text field
+  let cleanedOutputText = outputText;
+  if (originalRequest.text?.format?.type === 'json_schema') {
+    cleanedOutputText = removeMarkdownCodeBlock(outputText);
+  }
+
   // Build Responses API response with ALL required fields
   const responsesResponse = {
     id: `resp_${Date.now()}`,
@@ -365,7 +617,7 @@ export function convertGeminiResponseToResponsesFormat(geminiResponse, model = '
     service_tier: 'default',
     store: originalRequest.store !== undefined ? originalRequest.store : true,
     temperature: originalRequest.temperature !== undefined ? originalRequest.temperature : 1,
-    text: {
+    text: originalRequest.text || {
       format: {
         type: 'text'
       },
@@ -389,7 +641,7 @@ export function convertGeminiResponseToResponsesFormat(geminiResponse, model = '
     },
     user: null,
     metadata: {},
-    output_text: outputText
+    output_text: cleanedOutputText
   };
 
   return responsesResponse;

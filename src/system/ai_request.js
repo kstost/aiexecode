@@ -1,12 +1,12 @@
-import OpenAI from "openai";
 import dotenv from "dotenv";
 import path from 'path';
 import { safeWriteFile } from '../util/safe_fs.js';
 import { logger } from "./log.js";
-import { ensureConfigDirectory, loadSettings, SETTINGS_FILE } from "../util/config.js";
-import { getReasoningModels, supportsReasoningEffort, DEFAULT_OPENAI_MODEL } from "../config/openai_models.js";
+import { ensureConfigDirectory, loadSettings, SETTINGS_FILE, PAYLOAD_LLM_LOG_DIR } from "../util/config.js";
+import { getReasoningModels, supportsReasoningEffort, DEFAULT_MODEL, getModelInfo } from "../config/ai_models.js";
 import { createDebugLogger } from "../util/debug_log.js";
 import { formatReadFileStdout } from "../util/output_formatter.js";
+import { UnifiedLLMClient } from "../LLMClient/index.js";
 
 const debugLog = createDebugLogger('ai_request.log', 'ai_request');
 
@@ -14,70 +14,81 @@ const debugLog = createDebugLogger('ai_request.log', 'ai_request');
 dotenv.config({ quiet: true });
 
 // AI 클라이언트를 초기화합니다.
-let openaiClient = null;
+let llmClient = null;
 let currentAbortController = null;
 
-async function getOpenAIClient() {
-    debugLog('[getOpenAIClient] Called');
-    if (openaiClient) {
-        debugLog('[getOpenAIClient] Using cached client');
-        return openaiClient;
+async function getLLMClient() {
+    debugLog('[getLLMClient] Called');
+    if (llmClient) {
+        debugLog('[getLLMClient] Using cached client');
+        return llmClient;
     }
 
-    debugLog('[getOpenAIClient] Creating new client');
+    debugLog('[getLLMClient] Creating new client');
     // Settings 로드 및 환경변수 설정
     await ensureConfigDirectory();
     const settings = await loadSettings();
-    debugLog(`[getOpenAIClient] Settings loaded: AI_PROVIDER=${settings?.AI_PROVIDER}, OPENAI_MODEL=${settings?.OPENAI_MODEL}, OPENAI_REASONING_EFFORT=${settings?.OPENAI_REASONING_EFFORT}`);
+    debugLog(`[getLLMClient] Settings loaded: MODEL=${settings?.MODEL}, REASONING_EFFORT=${settings?.REASONING_EFFORT}`);
 
-    if (!process.env.OPENAI_API_KEY && settings?.OPENAI_API_KEY) {
-        process.env.OPENAI_API_KEY = settings.OPENAI_API_KEY;
-        debugLog('[getOpenAIClient] OPENAI_API_KEY loaded from settings');
+    if (!process.env.API_KEY && settings?.API_KEY) {
+        process.env.API_KEY = settings.API_KEY;
+        debugLog('[getLLMClient] API_KEY loaded from settings');
     }
 
     // 모델 설정도 환경변수에 로드
-    if (!process.env.OPENAI_MODEL && settings?.OPENAI_MODEL) {
-        process.env.OPENAI_MODEL = settings.OPENAI_MODEL;
-        debugLog(`[getOpenAIClient] OPENAI_MODEL set to: ${settings.OPENAI_MODEL}`);
+    if (!process.env.MODEL && settings?.MODEL) {
+        process.env.MODEL = settings.MODEL;
+        debugLog(`[getLLMClient] MODEL set to: ${settings.MODEL}`);
     }
 
     // reasoning_effort 설정도 환경변수에 로드
-    if (!process.env.OPENAI_REASONING_EFFORT && settings?.OPENAI_REASONING_EFFORT) {
-        process.env.OPENAI_REASONING_EFFORT = settings.OPENAI_REASONING_EFFORT;
-        debugLog(`[getOpenAIClient] OPENAI_REASONING_EFFORT set to: ${settings.OPENAI_REASONING_EFFORT}`);
+    if (!process.env.REASONING_EFFORT && settings?.REASONING_EFFORT) {
+        process.env.REASONING_EFFORT = settings.REASONING_EFFORT;
+        debugLog(`[getLLMClient] REASONING_EFFORT set to: ${settings.REASONING_EFFORT}`);
     }
 
-    if (!process.env.OPENAI_API_KEY) {
-        debugLog('[getOpenAIClient] ERROR: OPENAI_API_KEY not configured');
-        throw new Error(`OPENAI_API_KEY is not configured. Please update ${SETTINGS_FILE}.`);
+    if (!process.env.API_KEY) {
+        debugLog('[getLLMClient] ERROR: API_KEY not configured');
+        throw new Error(`API_KEY is not configured. Please update ${SETTINGS_FILE}.`);
     }
 
-    debugLog('[getOpenAIClient] Initializing OpenAI client with API key (first 10 chars): ' + process.env.OPENAI_API_KEY.substring(0, 10) + '...');
-    openaiClient = new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY
+    const currentModel = process.env.MODEL || settings?.MODEL || DEFAULT_MODEL;
+    const modelInfo = getModelInfo(currentModel);
+    const provider = modelInfo?.provider || 'openai';
+
+    debugLog('[getLLMClient] Initializing UnifiedLLMClient with API key (first 10 chars): ' + process.env.API_KEY.substring(0, 10) + '...');
+    debugLog(`[getLLMClient] Model: ${currentModel}, Provider: ${provider}`);
+    llmClient = new UnifiedLLMClient({
+        apiKey: process.env.API_KEY,
+        model: currentModel,
+        provider: provider,
+        logDir: PAYLOAD_LLM_LOG_DIR
     });
 
-    debugLog('[getOpenAIClient] Client created successfully');
-    return openaiClient;
+    debugLog('[getLLMClient] Client created successfully');
+    return llmClient;
 }
 
 async function getCurrentProvider() {
-    return 'openai';
+    const settings = await loadSettings();
+    const currentModel = process.env.MODEL || settings?.MODEL || DEFAULT_MODEL;
+    const modelInfo = getModelInfo(currentModel);
+    return modelInfo?.provider || 'openai';
 }
 
 // Provider에 맞는 모델 이름 가져오기
 async function getModelForProvider() {
     debugLog('[getModelForProvider] Called');
     const settings = await loadSettings();
-    const model = process.env.OPENAI_MODEL || settings?.OPENAI_MODEL || DEFAULT_OPENAI_MODEL;
-    debugLog(`[getModelForProvider] Model: ${model} (from: ${process.env.OPENAI_MODEL ? 'env' : settings?.OPENAI_MODEL ? 'settings' : 'default'})`);
+    const model = process.env.MODEL || settings?.MODEL || DEFAULT_MODEL;
+    debugLog(`[getModelForProvider] Model: ${model} (from: ${process.env.MODEL ? 'env' : settings?.MODEL ? 'settings' : 'default'})`);
     return model;
 }
 
 // 클라이언트 및 캐시 리셋 함수 (모델 변경 시 사용)
 export function resetAIClients() {
     debugLog('[resetAIClients] Resetting AI client cache');
-    openaiClient = null;
+    llmClient = null;
     currentAbortController = null;
     debugLog('[resetAIClients] Client cache cleared');
 }
@@ -431,18 +442,18 @@ export async function request(taskName, requestPayload) {
     currentAbortController = new AbortController();
 
     try {
-        // OpenAI API 사용
-        debugLog('[request] Getting OpenAI client');
-        const openai = await getOpenAIClient();
+        // UnifiedLLMClient 사용
+        debugLog('[request] Getting LLM client');
+        const client = await getLLMClient();
 
         // reasoning 설정 추가 (OpenAI 추론 모델용)
         const settings = await loadSettings();
-        const reasoningEffort = settings?.OPENAI_REASONING_EFFORT || process.env.OPENAI_REASONING_EFFORT || 'medium';
+        const reasoningEffort = settings?.REASONING_EFFORT || process.env.REASONING_EFFORT || 'medium';
         debugLog(`[request] Reasoning effort: ${reasoningEffort}`);
 
         // reasoning을 지원하는 모델인지 확인
         const reasoningModels = getReasoningModels();
-        const currentModel = payloadCopy.model || settings?.OPENAI_MODEL || DEFAULT_OPENAI_MODEL;
+        const currentModel = payloadCopy.model || settings?.MODEL || DEFAULT_MODEL;
         debugLog(`[request] Current model: ${currentModel}`);
 
         if (reasoningModels.some(m => currentModel.startsWith(m))) {
@@ -481,16 +492,14 @@ export async function request(taskName, requestPayload) {
             debugLog(`[request] Model does not support reasoning`);
         }
 
-        originalRequest = JSON.parse(JSON.stringify(payloadCopy)); // 원본 OpenAI 요청
+        originalRequest = JSON.parse(JSON.stringify(payloadCopy)); // 원본 요청
         debugLog(`[request] Request prepared - logging to file`);
 
-        // 로그는 원본 OpenAI 포맷으로 저장 (API 호출 전)
+        // 로그는 원본 포맷으로 저장 (API 호출 전)
         await logger(`${taskName}_REQ`, originalRequest, provider);
-        debugLog(`[request] Request logged - calling OpenAI API`);
+        debugLog(`[request] Request logged - calling LLM API`);
 
-        response = await openai.responses.create(originalRequest, {
-            signal: currentAbortController.signal
-        });
+        response = await client.response(originalRequest);
         debugLog(`[request] Response received - id: ${response?.id}, status: ${response?.status}, output items: ${response?.output?.length || 0}`);
 
         // 원본 응답을 깊은 복사로 보존 (이후 수정으로부터 보호)

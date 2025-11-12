@@ -2,36 +2,35 @@ import React from 'react';
 import { uiEvents } from '../system/ui_events.js';
 import { loadSettings, saveSettings, SETTINGS_FILE } from '../util/config.js';
 import { resetAIClients } from '../system/ai_request.js';
-import { OPENAI_MODELS, getGPT5Models, DEFAULT_OPENAI_MODEL } from '../config/openai_models.js';
+import { AI_MODELS, getModelsByProvider, DEFAULT_MODEL } from '../config/ai_models.js';
 import { renderInkComponent } from '../frontend/utils/renderInkComponent.js';
 import { ModelListView } from '../frontend/components/ModelListView.js';
 import { CurrentModelView } from '../frontend/components/CurrentModelView.js';
 import { ModelUpdatedView } from '../frontend/components/ModelUpdatedView.js';
 
-// 지원하는 모델 목록
-// OpenAI: https://platform.openai.com/docs/pricing
-const MODELS = {
-    openai: OPENAI_MODELS
-};
-
 // 모델 ID로 provider 찾기
 function getProviderForModel(modelId) {
-    if (MODELS.openai[modelId]) {
-        return 'openai';
-    }
-    return null;
+    const modelInfo = AI_MODELS[modelId];
+    return modelInfo ? modelInfo.provider : null;
 }
 
 // 모든 모델 목록 표시
 async function listAllModels() {
-    const gpt5Models = getGPT5Models();
-    const openaiModels = gpt5Models.map(id => ({
-        id,
-        ...MODELS.openai[id]
-    }));
+    // 모든 provider 목록 추출
+    const providers = [...new Set(Object.values(AI_MODELS).map(m => m.provider))];
+
+    // provider별로 모델 그룹화
+    const modelsByProvider = {};
+    providers.forEach(provider => {
+        const modelIds = getModelsByProvider(provider);
+        modelsByProvider[provider] = modelIds.map(id => ({
+            id,
+            ...AI_MODELS[id]
+        }));
+    });
 
     const component = React.createElement(ModelListView, {
-        openaiModels
+        modelsByProvider
     });
 
     const output = await renderInkComponent(component);
@@ -42,11 +41,12 @@ async function listAllModels() {
 async function showCurrentModel() {
     try {
         const settings = await loadSettings();
-        const currentModel = settings?.OPENAI_MODEL || DEFAULT_OPENAI_MODEL;
-        const modelInfo = MODELS.openai?.[currentModel];
+        const currentModel = settings?.MODEL || DEFAULT_MODEL;
+        const modelInfo = AI_MODELS[currentModel];
+        const provider = modelInfo?.provider || 'unknown';
 
         const component = React.createElement(CurrentModelView, {
-            provider: 'openai',
+            provider,
             modelId: currentModel,
             modelInfo
         });
@@ -99,26 +99,26 @@ export default {
             const settings = await loadSettings();
 
             // 모델 업데이트
-            settings.OPENAI_MODEL = modelId;
-            process.env.OPENAI_MODEL = modelId;
+            settings.MODEL = modelId;
+            process.env.MODEL = modelId;
 
             // 설정 저장
             await saveSettings(settings);
-            
+
             // AI 클라이언트 캐시 초기화 (다음 요청 시 새 설정 적용)
             resetAIClients();
-            
+
             // UI 모델 표시 업데이트
             uiEvents.emit('model:changed', { model: modelId });
 
             // 성공 메시지
-            const modelInfo = MODELS[provider][modelId];
+            const modelInfo = AI_MODELS[modelId];
 
             let warning = null;
-            if (!settings.OPENAI_API_KEY) {
+            if (!settings.API_KEY) {
                 warning = {
-                    message: 'OpenAI API key is not configured.',
-                    hint: 'Set your API key with: `/apikey openai sk-proj-...`'
+                    message: 'API key is not configured.',
+                    hint: 'Set your API key with: `/apikey sk-proj-...`'
                 };
             }
 

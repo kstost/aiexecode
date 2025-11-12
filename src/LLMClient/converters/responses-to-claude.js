@@ -35,7 +35,7 @@ export function convertResponsesRequestToClaudeFormat(responsesRequest) {
     model: model,
     max_tokens: responsesRequest.max_output_tokens || defaultMaxTokens
   };
-  console.log(claudeRequest);
+  // console.log(claudeRequest);
 
   // Convert input to messages
   // Responses API input can be: string, array of messages, or array of items
@@ -65,6 +65,7 @@ export function convertResponsesRequestToClaudeFormat(responsesRequest) {
               }
             }
           }
+          // Only include messages with actual content (skip empty messages)
           if (textBlocks.length > 0) {
             messages.push({
               role: 'assistant',
@@ -174,7 +175,37 @@ export function convertResponsesRequestToClaudeFormat(responsesRequest) {
     }
   }
 
-  claudeRequest.messages = messages;
+  // Merge consecutive messages with the same role (Claude doesn't allow this)
+  const mergedMessages = [];
+  for (let i = 0; i < messages.length; i++) {
+    const currentMsg = messages[i];
+
+    // Check if the next message has the same role
+    if (i < messages.length - 1 && messages[i + 1].role === currentMsg.role) {
+      // Merge content from consecutive same-role messages
+      const mergedContent = Array.isArray(currentMsg.content) ? [...currentMsg.content] : [currentMsg.content];
+
+      // Keep merging while the next message has the same role
+      while (i < messages.length - 1 && messages[i + 1].role === currentMsg.role) {
+        i++;
+        const nextContent = messages[i].content;
+        if (Array.isArray(nextContent)) {
+          mergedContent.push(...nextContent);
+        } else {
+          mergedContent.push(nextContent);
+        }
+      }
+
+      mergedMessages.push({
+        role: currentMsg.role,
+        content: mergedContent
+      });
+    } else {
+      mergedMessages.push(currentMsg);
+    }
+  }
+
+  claudeRequest.messages = mergedMessages;
 
   // Handle instructions (system message)
   if (responsesRequest.instructions) {
@@ -263,6 +294,39 @@ export function convertResponsesRequestToClaudeFormat(responsesRequest) {
     claudeRequest.metadata = responsesRequest.metadata;
   }
 
+  // Handle json_schema format by converting to tool use
+  // OpenAI Responses API: text.format.type = "json_schema" with schema
+  // Claude: Use a synthetic tool to enforce structured output
+  if (responsesRequest.text?.format?.type === 'json_schema') {
+    const schemaName = responsesRequest.text.format.name || 'output';
+    const schema = responsesRequest.text.format.schema;
+
+    // Create a synthetic tool that represents the JSON schema
+    const syntheticTool = {
+      name: schemaName,
+      description: `Generate structured output matching the ${schemaName} schema`,
+      input_schema: schema
+    };
+
+    // Replace tools array with only the synthetic tool (to ensure structured output)
+    claudeRequest.tools = [syntheticTool];
+
+    // Force tool use with this specific tool (ignore original tool_choice)
+    claudeRequest.tool_choice = {
+      type: 'tool',
+      name: schemaName
+    };
+
+    // Claude requires conversation to end with user message when tool_choice is set
+    // If last message is assistant, add a dummy user message
+    if (claudeRequest.messages.length > 0 && claudeRequest.messages[claudeRequest.messages.length - 1].role === 'assistant') {
+      claudeRequest.messages.push({
+        role: 'user',
+        content: [{ type: 'text', text: 'Please provide the structured output.' }]
+      });
+    }
+  }
+
   return claudeRequest;
 }
 
@@ -276,6 +340,10 @@ export function convertResponsesRequestToClaudeFormat(responsesRequest) {
 export function convertClaudeResponseToResponsesFormat(claudeResponse, model = 'claude-sonnet-4-5', originalRequest = {}) {
   const output = [];
   let outputText = '';
+
+  // Check if this was a json_schema request converted to tool use
+  const wasJsonSchemaRequest = originalRequest.text?.format?.type === 'json_schema';
+  const schemaName = originalRequest.text?.format?.name;
 
   // Process content blocks
   if (claudeResponse.content && Array.isArray(claudeResponse.content)) {
@@ -291,15 +359,27 @@ export function convertClaudeResponseToResponsesFormat(claudeResponse, model = '
         });
         outputText += block.text;
       } else if (block.type === 'tool_use') {
-        // Tool call - add as separate function_call item
-        output.push({
-          id: `fc_${block.id}`,
-          type: 'function_call',
-          status: 'completed',
-          arguments: JSON.stringify(block.input),
-          call_id: block.id,
-          name: block.name
-        });
+        // Check if this is a synthetic tool for json_schema
+        if (wasJsonSchemaRequest && block.name === schemaName) {
+          // Convert tool_use back to plain text JSON (for json_schema requests)
+          const jsonOutput = JSON.stringify(block.input);
+          messageContent.push({
+            type: 'output_text',
+            text: jsonOutput,
+            annotations: []
+          });
+          outputText += jsonOutput;
+        } else {
+          // Regular tool call - add as separate function_call item
+          output.push({
+            id: `fc_${block.id}`,
+            type: 'function_call',
+            status: 'completed',
+            arguments: JSON.stringify(block.input),
+            call_id: block.id,
+            name: block.name
+          });
+        }
       }
     }
 
@@ -315,14 +395,21 @@ export function convertClaudeResponseToResponsesFormat(claudeResponse, model = '
     }
   }
 
-  // If no output items, create empty message
+  // If no output items, create a message with placeholder text
+  // (Claude may return empty response for various reasons)
   if (output.length === 0) {
     output.push({
       id: `msg_${claudeResponse.id}`,
       type: 'message',
       status: 'completed',
       role: 'assistant',
-      content: []
+      content: [
+        {
+          type: 'output_text',
+          text: outputText || ' ',
+          annotations: []
+        }
+      ]
     });
   }
 

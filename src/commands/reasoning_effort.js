@@ -1,7 +1,7 @@
 import { uiEvents } from '../system/ui_events.js';
 import { loadSettings, saveSettings, SETTINGS_FILE } from '../util/config.js';
 import { resetAIClients } from '../system/ai_request.js';
-import { OPENAI_MODELS, getReasoningModels, supportsReasoningEffort, DEFAULT_OPENAI_MODEL } from '../config/openai_models.js';
+import { AI_MODELS, getReasoningModels, supportsReasoningEffort, DEFAULT_MODEL } from '../config/ai_models.js';
 
 // reasoning_effort 값 검증 및 설명
 const EFFORT_LEVELS = {
@@ -34,14 +34,9 @@ const EFFORT_LEVELS = {
 // 현재 모델이 reasoning_effort를 지원하는지 확인
 async function checkModelSupport() {
     const settings = await loadSettings();
-    const currentModel = settings?.OPENAI_MODEL || DEFAULT_OPENAI_MODEL;
-    const provider = settings?.AI_PROVIDER || 'openai';
+    const currentModel = settings?.MODEL || DEFAULT_MODEL;
 
-    if (provider !== 'openai') {
-        return { supported: false, reason: 'Only OpenAI models support reasoning_effort.' };
-    }
-
-    const modelInfo = OPENAI_MODELS[currentModel];
+    const modelInfo = AI_MODELS[currentModel];
     if (!modelInfo || !modelInfo.supportsReasoning) {
         return { supported: false, reason: `Current model (${currentModel}) does not support reasoning_effort.` };
     }
@@ -52,21 +47,12 @@ async function checkModelSupport() {
 // 현재 설정 표시
 async function showCurrentSettings() {
     const settings = await loadSettings();
-    const currentModel = settings?.OPENAI_MODEL || DEFAULT_OPENAI_MODEL;
-    const provider = settings?.AI_PROVIDER || 'openai';
-    const reasoningEffort = settings?.OPENAI_REASONING_EFFORT || 'medium';
+    const currentModel = settings?.MODEL || DEFAULT_MODEL;
+    const reasoningEffort = settings?.REASONING_EFFORT || 'medium';
 
     let message = 'Reasoning Effort Configuration\n\n';
 
-    if (provider !== 'openai') {
-        message += 'Current provider is not OpenAI.\n';
-        message += `Current Provider: ${provider.toUpperCase()}\n`;
-        message += '\nReasoning effort is only supported for OpenAI models.\n';
-        message += 'Use `/model gpt-5` or `/model gpt-5-mini` to switch to an OpenAI model.\n';
-        return message;
-    }
-
-    const modelInfo = OPENAI_MODELS[currentModel];
+    const modelInfo = AI_MODELS[currentModel];
 
     if (!modelInfo || !modelInfo.supportsReasoning) {
         message += `Current model (\`${currentModel}\`) does not support reasoning_effort.\n\n`;
@@ -90,7 +76,7 @@ async function showCurrentSettings() {
 
 // 모든 effort 레벨 표시
 function listEffortLevels(currentModel) {
-    const modelInfo = OPENAI_MODELS[currentModel];
+    const modelInfo = AI_MODELS[currentModel];
 
     let message = 'Available Reasoning Effort Levels\n\n';
 
@@ -190,8 +176,8 @@ export default {
             const settings = await loadSettings();
 
             // reasoning_effort 업데이트
-            settings.OPENAI_REASONING_EFFORT = effortLevel;
-            process.env.OPENAI_REASONING_EFFORT = effortLevel;
+            settings.REASONING_EFFORT = effortLevel;
+            process.env.REASONING_EFFORT = effortLevel;
 
             // 설정 저장
             await saveSettings(settings);

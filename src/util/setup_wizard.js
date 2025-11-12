@@ -58,10 +58,5 @@ export async function runSetupWizard() {
  */
 export async function isConfigured() {
     const settings = await loadSettings();
-
-    if (settings.AI_PROVIDER === 'openai') {
-        return Boolean(settings.OPENAI_API_KEY && settings.OPENAI_API_KEY.trim());
-    }
-
-    return false;
+    return Boolean(settings.API_KEY && settings.API_KEY.trim());
 }

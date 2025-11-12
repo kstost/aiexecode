@@ -5,14 +5,14 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { theme } from '../design/themeColors.js';
-import { OPENAI_MODELS } from '../../config/openai_models.js';
+import { AI_MODELS } from '../../config/ai_models.js';
 
 export function Footer({ model = 'gpt-4', reasoningEffort = null, cwd = process.cwd() }) {
     const displayCwd = cwd.length > 40 ? '...' + cwd.slice(-37) : cwd;
 
-    // Display reasoning effort for OpenAI models that support it
+    // Display reasoning effort for models that support it
     let displayModel = model;
-    const modelInfo = OPENAI_MODELS[model];
+    const modelInfo = AI_MODELS[model];
     const supportsReasoningEffort = modelInfo?.supportsReasoning || false;
     if (reasoningEffort && supportsReasoningEffort) {
         displayModel = `${model} (${reasoningEffort})`;

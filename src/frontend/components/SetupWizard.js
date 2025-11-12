@@ -5,29 +5,28 @@
 import React, { useState, useRef } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { theme } from '../design/themeColors.js';
-import { OPENAI_MODELS, getGPT5Models, DEFAULT_OPENAI_MODEL } from '../../config/openai_models.js';
+import { AI_MODELS, getAllModelIds, DEFAULT_MODEL } from '../../config/ai_models.js';
 
 const STEPS = {
-    OPENAI_KEY: 'openai_key',
-    OPENAI_MODEL: 'openai_model',
-    OPENAI_EFFORT: 'openai_effort'
+    API_KEY: 'api_key',
+    MODEL: 'model',
+    REASONING_EFFORT: 'reasoning_effort'
 };
 
 export function SetupWizard({ onComplete, onCancel }) {
-    const [step, setStep] = useState(STEPS.OPENAI_KEY);
+    const [step, setStep] = useState(STEPS.API_KEY);
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [textInput, setTextInput] = useState('');
 
     // settings를 ref로 관리하여 stale closure 문제 방지
     const settingsRef = useRef({
-        AI_PROVIDER: 'openai',
-        OPENAI_API_KEY: '',
-        OPENAI_MODEL: DEFAULT_OPENAI_MODEL,
-        OPENAI_REASONING_EFFORT: 'medium'
+        API_KEY: '',
+        MODEL: DEFAULT_MODEL,
+        REASONING_EFFORT: 'medium'
     });
 
     // 현재 스텝이 텍스트 입력인지 선택지인지 판단
-    const isTextInputStep = step === STEPS.OPENAI_KEY;
+    const isTextInputStep = step === STEPS.API_KEY;
 
     const completeSetup = () => {
         if (onComplete) {
@@ -38,29 +37,35 @@ export function SetupWizard({ onComplete, onCancel }) {
 
     const handleStepComplete = () => {
         switch (step) {
-            case STEPS.OPENAI_KEY:
+            case STEPS.API_KEY:
                 if (!textInput.trim()) {
                     return;
                 }
-                settingsRef.current.OPENAI_API_KEY = textInput.trim();
-                setStep(STEPS.OPENAI_MODEL);
+                settingsRef.current.API_KEY = textInput.trim();
+                setStep(STEPS.MODEL);
                 setTextInput('');
                 setSelectedIndex(0);
                 break;
 
-            case STEPS.OPENAI_MODEL:
-                const models = getGPT5Models();
+            case STEPS.MODEL:
+                const models = getAllModelIds();
                 const selectedModel = models[selectedIndex];
-                settingsRef.current.OPENAI_MODEL = selectedModel;
+                settingsRef.current.MODEL = selectedModel;
 
-                // gpt-5 모델은 모두 reasoning effort 설정 필요
-                setStep(STEPS.OPENAI_EFFORT);
-                setSelectedIndex(2); // default to 'medium'
+                // reasoning을 지원하는 모델만 reasoning effort 설정
+                const modelInfo = AI_MODELS[selectedModel];
+                if (modelInfo && modelInfo.supportsReasoning) {
+                    setStep(STEPS.REASONING_EFFORT);
+                    setSelectedIndex(2); // default to 'medium'
+                } else {
+                    // reasoning을 지원하지 않으면 바로 완료
+                    completeSetup();
+                }
                 break;
 
-            case STEPS.OPENAI_EFFORT:
+            case STEPS.REASONING_EFFORT:
                 const efforts = ['minimal', 'low', 'medium', 'high'];
-                settingsRef.current.OPENAI_REASONING_EFFORT = efforts[selectedIndex];
+                settingsRef.current.REASONING_EFFORT = efforts[selectedIndex];
                 // 완료
                 completeSetup();
                 break;
@@ -112,9 +117,9 @@ export function SetupWizard({ onComplete, onCancel }) {
 
     const getMaxIndexForStep = (currentStep) => {
         switch (currentStep) {
-            case STEPS.OPENAI_MODEL:
-                return getGPT5Models().length - 1;
-            case STEPS.OPENAI_EFFORT:
+            case STEPS.MODEL:
+                return getAllModelIds().length - 1;
+            case STEPS.REASONING_EFFORT:
                 return 3; // 4 options
             default:
                 return 0;
@@ -137,9 +142,9 @@ export function SetupWizard({ onComplete, onCancel }) {
 
     const renderStep = () => {
         switch (step) {
-            case STEPS.OPENAI_KEY:
+            case STEPS.API_KEY:
                 return React.createElement(Box, { flexDirection: 'column' },
-                    React.createElement(Text, { bold: true, color: theme.text.accent }, '1. OpenAI API Key:'),
+                    React.createElement(Text, { bold: true, color: theme.text.accent }, '1. API Key:'),
                     React.createElement(Text, { color: theme.text.secondary }, '   Get your API key from: https://platform.openai.com/account/api-keys'),
                     React.createElement(Text, null),
                     React.createElement(Box, {
@@ -153,13 +158,13 @@ export function SetupWizard({ onComplete, onCancel }) {
                     React.createElement(Text, { dimColor: true }, 'Type your API key and press Enter')
                 );
 
-            case STEPS.OPENAI_MODEL:
+            case STEPS.MODEL:
                 return React.createElement(Box, { flexDirection: 'column' },
                     React.createElement(Text, { bold: true, color: theme.text.accent }, '2. Choose Model:'),
                     React.createElement(Text, null),
                     renderOptions(
-                        getGPT5Models().map(modelId => {
-                            const model = OPENAI_MODELS[modelId];
+                        getAllModelIds().map(modelId => {
+                            const model = AI_MODELS[modelId];
                             return `${modelId} (${model.name})`;
                         })
                     ),
@@ -167,7 +172,7 @@ export function SetupWizard({ onComplete, onCancel }) {
                     React.createElement(Text, { dimColor: true }, '↑↓: Navigate  Enter: Confirm')
                 );
 
-            case STEPS.OPENAI_EFFORT:
+            case STEPS.REASONING_EFFORT:
                 return React.createElement(Box, { flexDirection: 'column' },
                     React.createElement(Text, { bold: true, color: theme.text.accent }, '3. Reasoning Effort:'),
                     React.createElement(Text, null),

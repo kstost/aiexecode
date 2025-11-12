@@ -980,10 +980,9 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
         await saveSettings(settings);
 
         // 환경변수 업데이트
-        process.env.AI_PROVIDER = settings.AI_PROVIDER;
-        process.env.OPENAI_API_KEY = settings.OPENAI_API_KEY;
-        process.env.OPENAI_MODEL = settings.OPENAI_MODEL;
-        process.env.OPENAI_REASONING_EFFORT = settings.OPENAI_REASONING_EFFORT;
+        process.env.API_KEY = settings.API_KEY;
+        process.env.MODEL = settings.MODEL;
+        process.env.REASONING_EFFORT = settings.REASONING_EFFORT;
 
         // 클라이언트 리셋
         resetAIClients();
@@ -992,12 +991,8 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
         const newModel = await getModelForProvider();
         setCurrentModel(newModel);
 
-        // reasoning effort 업데이트 (OpenAI 모델인 경우)
-        if (settings.AI_PROVIDER === 'openai') {
-            setReasoningEffort(settings.OPENAI_REASONING_EFFORT);
-        } else {
-            setReasoningEffort(null);
-        }
+        // reasoning effort 업데이트
+        setReasoningEffort(settings.REASONING_EFFORT);
 
         // 설정 완료 메시지 추가
         uiEvents.addSystemMessage('✓ Setup completed! New configuration will be used.');
