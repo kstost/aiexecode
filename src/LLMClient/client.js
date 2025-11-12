@@ -3,6 +3,8 @@
  * Supports OpenAI, Claude, Gemini, and Ollama with OpenAI Responses API-compatible interface
  */
 
+import fs from 'fs';
+import path from 'path';
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -21,12 +23,14 @@ export class UnifiedLLMClient {
    * @param {string} [config.apiKey] - API key for the provider
    * @param {string} [config.baseUrl] - Base URL (for Ollama)
    * @param {string} [config.model] - Default model to use
+   * @param {string} [config.logDir] - Directory path for logging request/response payloads (if not provided, logging is disabled)
    */
   constructor(config = {}) {
     this.provider = config.provider;
     this.apiKey = config.apiKey;
     this.baseUrl = config.baseUrl;
     this.defaultModel = config.model;
+    this.logDir = config.logDir;
     this.explicitProvider = !!config.provider; // Track if provider was explicitly set
 
     // Auto-detect provider from model if not explicitly provided
@@ -36,6 +40,18 @@ export class UnifiedLLMClient {
 
     // Default to openai if still no provider
     this.provider = this.provider || 'openai';
+
+    // Create log directory if specified and doesn't exist
+    if (this.logDir) {
+      try {
+        if (!fs.existsSync(this.logDir)) {
+          fs.mkdirSync(this.logDir, { recursive: true });
+        }
+      } catch (error) {
+        console.error(`Failed to create log directory: ${error.message}`);
+        this.logDir = null; // Disable logging if directory creation fails
+      }
+    }
 
     this._initializeClient();
   }
@@ -89,6 +105,35 @@ export class UnifiedLLMClient {
   }
 
   /**
+   * Log payload to file
+   * @param {Object} payload - Request or response payload
+   * @param {string} type - 'REQ' or 'RES'
+   * @param {string} providerName - Provider name
+   */
+  _logPayload(payload, type, providerName) {
+    if (!this.logDir) return;
+
+    try {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      const seconds = String(now.getSeconds()).padStart(2, '0');
+      const milliseconds = String(now.getMilliseconds()).padStart(3, '0');
+
+      const timestamp = `${year}${month}${day}-${hours}${minutes}${seconds}-${milliseconds}`;
+      const filename = `${timestamp}-${type}-${providerName}.json`;
+      const filepath = path.join(this.logDir, filename);
+
+      fs.writeFileSync(filepath, JSON.stringify(payload, null, 2), 'utf-8');
+    } catch (error) {
+      console.error(`Failed to log payload: ${error.message}`);
+    }
+  }
+
+  /**
    * Create a response (Responses API-compatible interface)
    * @param {Object} request - Responses API format request
    * @returns {Promise<Object>|AsyncGenerator} Responses API format response or stream
@@ -97,6 +142,42 @@ export class UnifiedLLMClient {
     // Set default model if not provided
     if (!request.model && this.defaultModel) {
       request.model = this.defaultModel;
+    }
+
+    // Convert instructions field to input array (Method 2)
+    // If instructions is provided, add it as a system role message at the beginning of input array
+    if (request.instructions) {
+      // Ensure input is an array
+      if (!request.input) {
+        request.input = [];
+      } else if (typeof request.input === 'string') {
+        // Convert string input to array format
+        request.input = [
+          {
+            role: 'user',
+            content: [{ type: 'input_text', text: request.input }]
+          }
+        ];
+      }
+
+      // Check if input already has a system message
+      const hasSystemMessage = Array.isArray(request.input) &&
+                                request.input.some(item => item.role === 'system');
+
+      if (!hasSystemMessage) {
+        // Add instructions as system message at the beginning
+        const systemMessage = {
+          role: 'system',
+          content: typeof request.instructions === 'string'
+            ? [{ type: 'input_text', text: request.instructions }]
+            : request.instructions
+        };
+
+        request.input.unshift(systemMessage);
+      }
+
+      // Remove instructions field to avoid duplication
+      delete request.instructions;
     }
 
     // Auto-detect provider from model name in request
@@ -114,6 +195,9 @@ export class UnifiedLLMClient {
         }
       }
     }
+
+    // Log request payload
+    this._logPayload(request, 'REQ', effectiveProvider);
 
     // Check if streaming is requested
     const isStreaming = request.stream === true;
@@ -140,6 +224,8 @@ export class UnifiedLLMClient {
     try {
       // Call OpenAI Responses API directly
       const response = await this._callOpenAIResponsesAPI(request);
+      // Log response payload
+      this._logPayload(response, 'RES', 'openai');
       return response;
     } catch (error) {
       throw normalizeError(error, 'openai');
@@ -154,6 +240,9 @@ export class UnifiedLLMClient {
     // Convert from string or Chat Completions format to proper input array
     if (openAIRequest.input) {
       openAIRequest.input = normalizeInput(openAIRequest.input);
+
+      // OpenAI Responses API uses role-based input with content arrays
+      // No conversion needed - keep the format as-is
     }
 
     // 2. Tools conversion
@@ -198,32 +287,130 @@ export class UnifiedLLMClient {
       }
     }
 
+    // Log raw request payload before API call
+    this._logPayload(openAIRequest, 'REQ-RAW', 'openai');
+
     // Use OpenAI SDK to call Responses API (like ai_request.js)
     const data = await this.client.responses.create(openAIRequest);
 
-    // Parse function call arguments if they are strings
-    if (data.output && Array.isArray(data.output)) {
-      for (const item of data.output) {
-        if (item.type === 'function_call' && typeof item.arguments === 'string') {
-          try {
-            item.input = JSON.parse(item.arguments);
-            delete item.arguments; // Keep only 'input' for consistency
-          } catch (e) {
-            // If parsing fails, keep as string
-            item.input = item.arguments;
+    // Ensure all required fields are present and properly formatted
+    const normalizedResponse = {
+      id: data.id,
+      object: data.object || 'response',
+      created_at: data.created_at || Math.floor(Date.now() / 1000),
+      status: data.status || 'completed',
+      background: data.background !== undefined ? data.background : false,
+      billing: data.billing || { payer: 'developer' },
+      error: data.error || null,
+      incomplete_details: data.incomplete_details || null,
+      instructions: data.instructions || openAIRequest.instructions || null,
+      max_output_tokens: data.max_output_tokens || openAIRequest.max_output_tokens || null,
+      max_tool_calls: data.max_tool_calls || null,
+      model: data.model,
+      output: data.output || [],
+      parallel_tool_calls: data.parallel_tool_calls !== undefined ? data.parallel_tool_calls : true,
+      previous_response_id: data.previous_response_id || null,
+      prompt_cache_key: data.prompt_cache_key || null,
+      prompt_cache_retention: data.prompt_cache_retention || null,
+      reasoning: data.reasoning || { effort: openAIRequest.reasoning?.effort || null, summary: openAIRequest.reasoning?.summary || null },
+      safety_identifier: data.safety_identifier || null,
+      service_tier: data.service_tier || 'default',
+      store: data.store !== undefined ? data.store : (openAIRequest.store !== undefined ? openAIRequest.store : true),
+      temperature: data.temperature !== undefined ? data.temperature : (openAIRequest.temperature !== undefined ? openAIRequest.temperature : 1),
+      text: data.text || { format: { type: 'text' }, verbosity: 'medium' },
+      tool_choice: data.tool_choice || openAIRequest.tool_choice || 'auto',
+      tools: data.tools || openAIRequest.tools || [],
+      top_logprobs: data.top_logprobs !== undefined ? data.top_logprobs : 0,
+      top_p: data.top_p !== undefined ? data.top_p : (openAIRequest.top_p !== undefined ? openAIRequest.top_p : 1),
+      truncation: data.truncation || 'disabled',
+      usage: data.usage || {
+        input_tokens: 0,
+        input_tokens_details: { cached_tokens: 0 },
+        output_tokens: 0,
+        output_tokens_details: { reasoning_tokens: 0 },
+        total_tokens: 0
+      },
+      user: data.user || null,
+      metadata: data.metadata || {},
+      output_text: data.output_text !== undefined ? data.output_text : ''
+    };
+
+    // Normalize output items
+    if (normalizedResponse.output && Array.isArray(normalizedResponse.output)) {
+      for (const item of normalizedResponse.output) {
+        // Ensure function_call items have proper structure
+        if (item.type === 'function_call') {
+          // Ensure id field exists
+          if (!item.id) {
+            item.id = `fc_${item.call_id || Date.now()}`;
+          }
+          // Ensure status field exists
+          if (!item.status) {
+            item.status = 'completed';
+          }
+          // Keep arguments as string (per spec)
+          if (typeof item.arguments !== 'string' && item.input) {
+            item.arguments = JSON.stringify(item.input);
+          }
+          // Ensure call_id exists
+          if (!item.call_id && item.id) {
+            item.call_id = item.id.replace(/^fc_/, 'call_');
+          }
+        }
+        // Ensure message items have proper structure
+        else if (item.type === 'message') {
+          if (!item.id) {
+            item.id = `msg_${Date.now()}`;
+          }
+          if (!item.status) {
+            item.status = 'completed';
+          }
+        }
+        // Ensure reasoning items have proper structure
+        else if (item.type === 'reasoning') {
+          if (!item.id) {
+            item.id = `rs_${Date.now()}`;
           }
         }
       }
     }
 
-    return data;
+    // Calculate output_text if not provided
+    if (normalizedResponse.output_text === '' && normalizedResponse.output) {
+      let outputText = '';
+      for (const item of normalizedResponse.output) {
+        if (item.type === 'message' && item.content) {
+          for (const content of item.content) {
+            if (content.type === 'output_text' && content.text) {
+              outputText += content.text;
+            }
+          }
+        }
+      }
+      normalizedResponse.output_text = outputText;
+    }
+
+    // Ensure usage has proper structure
+    if (!normalizedResponse.usage.input_tokens_details) {
+      normalizedResponse.usage.input_tokens_details = { cached_tokens: 0 };
+    }
+    if (!normalizedResponse.usage.output_tokens_details) {
+      normalizedResponse.usage.output_tokens_details = { reasoning_tokens: 0 };
+    }
+
+    return normalizedResponse;
   }
 
   async _responseClaude(request) {
     try {
       const claudeRequest = convertResponsesRequestToClaudeFormat(request);
+      // Log raw request payload before API call
+      this._logPayload(claudeRequest, 'REQ-RAW', 'claude');
       const claudeResponse = await this.client.messages.create(claudeRequest);
-      return convertClaudeResponseToResponsesFormat(claudeResponse, request.model);
+      const response = convertClaudeResponseToResponsesFormat(claudeResponse, request.model, request);
+      // Log response payload
+      this._logPayload(response, 'RES', 'claude');
+      return response;
     } catch (error) {
       throw normalizeError(error, 'claude');
     }
@@ -232,6 +419,8 @@ export class UnifiedLLMClient {
   async _responseGemini(request) {
     try {
       const geminiRequest = convertResponsesRequestToGeminiFormat(request);
+      // Log raw request payload before API call
+      this._logPayload(geminiRequest, 'REQ-RAW', 'gemini');
 
       // Create model configuration
       const modelConfig = { model: request.model || 'gemini-2.5-flash' };
@@ -257,11 +446,15 @@ export class UnifiedLLMClient {
         generateRequest.generationConfig = geminiRequest.generationConfig;
       }
 
+      if (geminiRequest.toolConfig) {
+        generateRequest.toolConfig = geminiRequest.toolConfig;
+      }
+
       const result = await model.generateContent(generateRequest);
       const response = await result.response;
 
       // Convert to Responses API format
-      return convertGeminiResponseToResponsesFormat({
+      const convertedResponse = convertGeminiResponseToResponsesFormat({
         candidates: [
           {
             content: response.candidates?.[0]?.content,
@@ -269,7 +462,10 @@ export class UnifiedLLMClient {
           }
         ],
         usageMetadata: response.usageMetadata
-      }, request.model);
+      }, request.model, request);
+      // Log response payload
+      this._logPayload(convertedResponse, 'RES', 'gemini');
+      return convertedResponse;
     } catch (error) {
       throw normalizeError(error, 'gemini');
     }
@@ -278,6 +474,8 @@ export class UnifiedLLMClient {
   async _responseOllama(request) {
     try {
       const { url, request: ollamaRequest } = convertResponsesRequestToOllamaFormat(request, this.baseUrl);
+      // Log raw request payload before API call
+      this._logPayload(ollamaRequest, 'REQ-RAW', 'ollama');
 
       const response = await fetch(url, {
         method: 'POST',
@@ -293,7 +491,12 @@ export class UnifiedLLMClient {
       }
 
       const ollamaResponse = await response.json();
-      return convertOllamaResponseToResponsesFormat(ollamaResponse, request.model);
+      // Log Ollama's raw response for debugging
+      this._logPayload(ollamaResponse, 'RES-RAW', 'ollama');
+      const convertedResponse = convertOllamaResponseToResponsesFormat(ollamaResponse, request.model, request);
+      // Log response payload
+      this._logPayload(convertedResponse, 'RES', 'ollama');
+      return convertedResponse;
     } catch (error) {
       throw normalizeError(error, 'ollama');
     }
@@ -309,6 +512,7 @@ export class UnifiedLLMClient {
    * @returns {AsyncGenerator} Responses API format stream
    */
   async *_responseOpenAIStream(request) {
+    const chunks = []; // Collect all chunks for logging
     try {
       // Prepare streaming request (same as non-streaming)
       const streamRequest = { ...request, stream: true };
@@ -353,6 +557,9 @@ export class UnifiedLLMClient {
         }
       }
 
+      // Log raw request payload before API call
+      this._logPayload(streamRequest, 'REQ-RAW', 'openai');
+
       // Use OpenAI SDK for streaming (like ai_request.js)
       const stream = await this.client.responses.create(streamRequest);
 
@@ -365,7 +572,7 @@ export class UnifiedLLMClient {
         // Convert OpenAI SDK streaming format to our standard format
         if (chunk.type === 'response.output_text.delta') {
           // Text delta
-          yield {
+          const deltaChunk = {
             id: streamId,
             object: 'response.delta',
             created_at: created,
@@ -376,15 +583,21 @@ export class UnifiedLLMClient {
               text: chunk.delta
             }
           };
+          chunks.push(deltaChunk);
+          yield deltaChunk;
         } else if (chunk.type === 'response.done' || chunk.type === 'response.completed') {
           // Stream completed
-          yield {
+          const doneChunk = {
             id: streamId,
             object: 'response.done',
             created_at: created,
             model: streamRequest.model,
             status: 'completed'
           };
+          chunks.push(doneChunk);
+          // Log all chunks
+          this._logPayload(chunks, 'RES', 'openai');
+          yield doneChunk;
         }
         // Ignore other chunk types for now (response.created, response.in_progress, etc.)
       }
@@ -399,8 +612,11 @@ export class UnifiedLLMClient {
    * @returns {AsyncGenerator} Responses API format stream
    */
   async *_responseClaudeStream(request) {
+    const chunks = []; // Collect all chunks for logging
     try {
       const claudeRequest = convertResponsesRequestToClaudeFormat(request);
+      // Log raw request payload before API call
+      this._logPayload(claudeRequest, 'REQ-RAW', 'claude');
       const stream = await this.client.messages.stream(claudeRequest);
 
       const streamId = `resp_${Date.now()}`;
@@ -410,7 +626,7 @@ export class UnifiedLLMClient {
       for await (const event of stream) {
         if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
           // Convert to Responses API streaming format
-          yield {
+          const deltaChunk = {
             id: streamId,
             object: 'response.delta',
             created_at: created,
@@ -421,15 +637,21 @@ export class UnifiedLLMClient {
               text: event.delta.text
             }
           };
+          chunks.push(deltaChunk);
+          yield deltaChunk;
         } else if (event.type === 'message_delta' && event.delta?.stop_reason) {
           // Final chunk
-          yield {
+          const doneChunk = {
             id: streamId,
             object: 'response.done',
             created_at: created,
             model: request.model || 'claude-sonnet-4-5',
             status: 'completed'
           };
+          chunks.push(doneChunk);
+          // Log all chunks
+          this._logPayload(chunks, 'RES', 'claude');
+          yield doneChunk;
         }
       }
     } catch (error) {
@@ -443,8 +665,11 @@ export class UnifiedLLMClient {
    * @returns {AsyncGenerator} Responses API format stream
    */
   async *_responseGeminiStream(request) {
+    const chunks = []; // Collect all chunks for logging
     try {
       const geminiRequest = convertResponsesRequestToGeminiFormat(request);
+      // Log raw request payload before API call
+      this._logPayload(geminiRequest, 'REQ-RAW', 'gemini');
 
       // Create model configuration
       const modelConfig = { model: request.model || 'gemini-2.5-flash' };
@@ -467,6 +692,10 @@ export class UnifiedLLMClient {
         generateRequest.generationConfig = geminiRequest.generationConfig;
       }
 
+      if (geminiRequest.toolConfig) {
+        generateRequest.toolConfig = geminiRequest.toolConfig;
+      }
+
       const result = await model.generateContentStream(generateRequest);
 
       const streamId = `resp_${Date.now()}`;
@@ -477,7 +706,7 @@ export class UnifiedLLMClient {
         const text = chunk.text();
 
         if (text) {
-          yield {
+          const deltaChunk = {
             id: streamId,
             object: 'response.delta',
             created_at: created,
@@ -488,17 +717,23 @@ export class UnifiedLLMClient {
               text: text
             }
           };
+          chunks.push(deltaChunk);
+          yield deltaChunk;
         }
       }
 
       // Final chunk
-      yield {
+      const doneChunk = {
         id: streamId,
         object: 'response.done',
         created_at: created,
         model: request.model || 'gemini-2.5-flash',
         status: 'completed'
       };
+      chunks.push(doneChunk);
+      // Log all chunks
+      this._logPayload(chunks, 'RES', 'gemini');
+      yield doneChunk;
     } catch (error) {
       throw normalizeError(error, 'gemini');
     }
@@ -510,11 +745,15 @@ export class UnifiedLLMClient {
    * @returns {AsyncGenerator} Responses API format stream
    */
   async *_responseOllamaStream(request) {
+    const chunks = []; // Collect all chunks for logging
     try {
       const { url, request: ollamaRequest } = convertResponsesRequestToOllamaFormat(request, this.baseUrl);
 
       // Ensure stream is enabled
       ollamaRequest.stream = true;
+
+      // Log raw request payload before API call
+      this._logPayload(ollamaRequest, 'REQ-RAW', 'ollama');
 
       const response = await fetch(url, {
         method: 'POST',
@@ -552,7 +791,7 @@ export class UnifiedLLMClient {
               const chunk = JSON.parse(line);
 
               if (chunk.message?.content) {
-                yield {
+                const deltaChunk = {
                   id: streamId,
                   object: 'response.delta',
                   created_at: created,
@@ -563,16 +802,22 @@ export class UnifiedLLMClient {
                     text: chunk.message.content
                   }
                 };
+                chunks.push(deltaChunk);
+                yield deltaChunk;
               }
 
               if (chunk.done) {
-                yield {
+                const doneChunk = {
                   id: streamId,
                   object: 'response.done',
                   created_at: created,
                   model: request.model,
                   status: 'completed'
                 };
+                chunks.push(doneChunk);
+                // Log all chunks
+                this._logPayload(chunks, 'RES', 'ollama');
+                yield doneChunk;
               }
             } catch (parseError) {
               console.error('Error parsing Ollama stream chunk:', parseError);

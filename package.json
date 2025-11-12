@@ -48,6 +48,8 @@
     "start": "node index.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.68.0",
+    "@google/generative-ai": "^0.24.1",
     "@modelcontextprotocol/sdk": "^1.19.1",
     "ansi-regex": "^6.2.2",
     "chalk": "^5.4.1",

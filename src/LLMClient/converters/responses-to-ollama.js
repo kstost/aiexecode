@@ -23,8 +23,53 @@ export function convertResponsesRequestToOllamaFormat(responsesRequest, baseUrl 
     });
   } else if (Array.isArray(responsesRequest.input)) {
     // Array input - could be messages or items
+    const toolCalls = []; // Collect tool calls to add to assistant message
+    const callIdToName = {}; // Map call_id to function name
+
     for (const item of responsesRequest.input) {
-      if (item.role && item.content) {
+      if (item.type === 'function_call') {
+        // Store call_id -> name mapping
+        if (item.call_id && item.name) {
+          callIdToName[item.call_id] = item.name;
+        }
+
+        // Function call - convert to Ollama tool_calls format (no id or type fields)
+        toolCalls.push({
+          function: {
+            name: item.name,
+            arguments: JSON.parse(item.arguments) // Ollama expects object, not string
+          }
+        });
+      } else if (item.type === 'function_call_output') {
+        // If we have pending tool calls, add assistant message with tool_calls first
+        if (toolCalls.length > 0) {
+          ollamaRequest.messages.push({
+            role: 'assistant',
+            content: '',
+            tool_calls: [...toolCalls]
+          });
+          toolCalls.length = 0; // Clear the array
+        }
+
+        // Function call output - convert to tool message (Ollama uses tool_name, not tool_call_id)
+        // Look up the function name from the call_id
+        const toolName = callIdToName[item.call_id] || '';
+        ollamaRequest.messages.push({
+          role: 'tool',
+          content: item.output,
+          tool_name: toolName
+        });
+      } else if (item.role && item.content) {
+        // If we have pending tool calls, add assistant message with tool_calls first
+        if (toolCalls.length > 0) {
+          ollamaRequest.messages.push({
+            role: 'assistant',
+            content: '',
+            tool_calls: [...toolCalls]
+          });
+          toolCalls.length = 0; // Clear the array
+        }
+
         // Message format
         // Handle content that might be an array (OpenAI Responses API format)
         const content = Array.isArray(item.content)
@@ -58,6 +103,15 @@ export function convertResponsesRequestToOllamaFormat(responsesRequest, baseUrl 
         }
       }
     }
+
+    // If there are remaining tool calls at the end, add them
+    if (toolCalls.length > 0) {
+      ollamaRequest.messages.push({
+        role: 'assistant',
+        content: '',
+        tool_calls: [...toolCalls]
+      });
+    }
   }
 
   // Add system instruction if provided
@@ -84,6 +138,19 @@ export function convertResponsesRequestToOllamaFormat(responsesRequest, baseUrl 
             name: tool.name,
             description: tool.description || `Tool: ${tool.name}`,
             parameters: tool.input_schema || {
+              type: 'object',
+              properties: {}
+            }
+          }
+        };
+      } else if (tool.type === 'function' && !tool.function) {
+        // Flat function format - convert to nested format for Ollama
+        return {
+          type: 'function',
+          function: {
+            name: tool.name,
+            description: tool.description || `Tool: ${tool.name}`,
+            parameters: tool.parameters || {
               type: 'object',
               properties: {}
             }
@@ -150,10 +217,12 @@ export function convertResponsesRequestToOllamaFormat(responsesRequest, baseUrl 
  * Convert Ollama response to Responses API format
  * @param {Object} ollamaResponse - Ollama format response
  * @param {string} model - Model name
+ * @param {Object} originalRequest - Original request for context
  * @returns {Object} Responses API format response
  */
-export function convertOllamaResponseToResponsesFormat(ollamaResponse, model) {
+export function convertOllamaResponseToResponsesFormat(ollamaResponse, model, originalRequest = {}) {
   const output = [];
+  let outputText = '';
 
   // Process message content
   if (ollamaResponse.message) {
@@ -166,18 +235,22 @@ export function convertOllamaResponseToResponsesFormat(ollamaResponse, model) {
         text: ollamaResponse.message.content,
         annotations: []
       });
+      outputText = ollamaResponse.message.content;
     }
 
     // Tool calls
     if (ollamaResponse.message.tool_calls && Array.isArray(ollamaResponse.message.tool_calls)) {
       for (const toolCall of ollamaResponse.message.tool_calls) {
+        const callId = toolCall.id || `call_${Date.now()}`;
         output.push({
+          id: `fc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           type: 'function_call',
-          call_id: toolCall.id || `call_${Date.now()}`,
-          name: toolCall.function?.name || '',
-          input: typeof toolCall.function?.arguments === 'string'
-            ? JSON.parse(toolCall.function.arguments)
-            : toolCall.function?.arguments || {}
+          status: 'completed',
+          arguments: typeof toolCall.function?.arguments === 'string'
+            ? toolCall.function.arguments
+            : JSON.stringify(toolCall.function?.arguments || {}),
+          call_id: callId,
+          name: toolCall.function?.name || ''
         });
       }
     }
@@ -185,8 +258,8 @@ export function convertOllamaResponseToResponsesFormat(ollamaResponse, model) {
     // Add message with text content if any
     if (messageContent.length > 0) {
       output.push({
-        type: 'message',
         id: `msg_${Date.now()}`,
+        type: 'message',
         status: 'completed',
         role: 'assistant',
         content: messageContent
@@ -197,50 +270,79 @@ export function convertOllamaResponseToResponsesFormat(ollamaResponse, model) {
   // If no output items, create empty message
   if (output.length === 0) {
     output.push({
-      type: 'message',
       id: `msg_${Date.now()}`,
+      type: 'message',
       status: 'completed',
       role: 'assistant',
       content: []
     });
   }
 
-  // Build Responses API response
+  // Build Responses API response with ALL required fields
+  // Parse created_at from Ollama's ISO format to Unix timestamp
+  let createdAt = Math.floor(Date.now() / 1000);
+  if (ollamaResponse.created_at) {
+    if (typeof ollamaResponse.created_at === 'string') {
+      createdAt = Math.floor(new Date(ollamaResponse.created_at).getTime() / 1000);
+    } else if (typeof ollamaResponse.created_at === 'number') {
+      createdAt = ollamaResponse.created_at;
+    }
+  }
+
   const responsesResponse = {
     id: `resp_${Date.now()}`,
     object: 'response',
-    created_at: ollamaResponse.created_at || Math.floor(Date.now() / 1000),
+    created_at: createdAt,
     status: ollamaResponse.done ? 'completed' : 'incomplete',
+    background: false,
+    billing: {
+      payer: 'developer'
+    },
+    error: null,
+    incomplete_details: null,
+    instructions: originalRequest.instructions || null,
+    max_output_tokens: originalRequest.max_output_tokens || null,
+    max_tool_calls: null,
     model: model || ollamaResponse.model || 'llama3.2',
     output: output,
+    parallel_tool_calls: true,
+    previous_response_id: null,
+    prompt_cache_key: null,
+    prompt_cache_retention: null,
+    reasoning: {
+      effort: originalRequest.reasoning?.effort || null,
+      summary: originalRequest.reasoning?.summary || null
+    },
+    safety_identifier: null,
+    service_tier: 'default',
+    store: originalRequest.store !== undefined ? originalRequest.store : true,
+    temperature: originalRequest.temperature !== undefined ? originalRequest.temperature : 1,
+    text: {
+      format: {
+        type: 'text'
+      },
+      verbosity: 'medium'
+    },
+    tool_choice: originalRequest.tool_choice || 'auto',
+    tools: originalRequest.tools || [],
+    top_logprobs: 0,
+    top_p: originalRequest.top_p !== undefined ? originalRequest.top_p : 1,
+    truncation: 'disabled',
     usage: {
       input_tokens: ollamaResponse.prompt_eval_count || 0,
+      input_tokens_details: {
+        cached_tokens: 0
+      },
       output_tokens: ollamaResponse.eval_count || 0,
+      output_tokens_details: {
+        reasoning_tokens: 0
+      },
       total_tokens: (ollamaResponse.prompt_eval_count || 0) + (ollamaResponse.eval_count || 0)
-    }
+    },
+    user: null,
+    metadata: {},
+    output_text: outputText
   };
-
-  // Add reasoning field (empty for Ollama, but structure matches Responses API)
-  responsesResponse.reasoning = {
-    effort: null,
-    summary: null
-  };
-
-  // Add additional Responses API fields
-  responsesResponse.parallel_tool_calls = true; // Ollama supports parallel tool calls
-  responsesResponse.previous_response_id = null;
-  responsesResponse.store = true;
-  responsesResponse.tool_choice = 'auto';
-  responsesResponse.tools = [];
-  responsesResponse.temperature = 1.0;
-  responsesResponse.top_p = 1.0;
-  responsesResponse.truncation = 'disabled';
-  responsesResponse.text = {
-    format: { type: 'text' }
-  };
-  responsesResponse.metadata = {};
-  responsesResponse.error = null;
-  responsesResponse.incomplete_details = null;
 
   return responsesResponse;
 }

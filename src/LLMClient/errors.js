@@ -4,15 +4,7 @@
 
 /**
  * OpenAI API Error class
- * Follows OpenAI error format:
- * {
- *   error: {
- *     message: string,
- *     type: string,
- *     param: string | null,
- *     code: string | null
- *   }
- * }
+ * Follows OpenAI Responses API error format
  */
 export class LLMError extends Error {
   constructor(message, options = {}) {
@@ -35,10 +27,78 @@ export class LLMError extends Error {
 
     // Provider information
     this.provider = options.provider || 'unknown';
+
+    // Store original request for response format
+    this.request = options.request || {};
   }
 
   /**
-   * Convert to JSON (OpenAI format)
+   * Convert to OpenAI Responses API error format
+   */
+  toResponsesFormat() {
+    return {
+      id: `resp_error_${Date.now()}`,
+      object: 'response',
+      created_at: Math.floor(Date.now() / 1000),
+      status: 'failed',
+      background: false,
+      billing: {
+        payer: 'developer'
+      },
+      error: {
+        type: this.error.type,
+        message: this.error.message,
+        code: this.error.code,
+        param: this.error.param
+      },
+      incomplete_details: null,
+      instructions: this.request.instructions || null,
+      max_output_tokens: this.request.max_output_tokens || null,
+      max_tool_calls: null,
+      model: this.request.model || null,
+      output: [],
+      parallel_tool_calls: true,
+      previous_response_id: null,
+      prompt_cache_key: null,
+      prompt_cache_retention: null,
+      reasoning: {
+        effort: this.request.reasoning?.effort || null,
+        summary: this.request.reasoning?.summary || null
+      },
+      safety_identifier: null,
+      service_tier: 'default',
+      store: this.request.store !== undefined ? this.request.store : true,
+      temperature: this.request.temperature !== undefined ? this.request.temperature : 1,
+      text: {
+        format: {
+          type: 'text'
+        },
+        verbosity: 'medium'
+      },
+      tool_choice: this.request.tool_choice || 'auto',
+      tools: this.request.tools || [],
+      top_logprobs: 0,
+      top_p: this.request.top_p !== undefined ? this.request.top_p : 1,
+      truncation: 'disabled',
+      usage: {
+        input_tokens: 0,
+        input_tokens_details: {
+          cached_tokens: 0
+        },
+        output_tokens: 0,
+        output_tokens_details: {
+          reasoning_tokens: 0
+        },
+        total_tokens: 0
+      },
+      user: null,
+      metadata: {},
+      output_text: ''
+    };
+  }
+
+  /**
+   * Convert to JSON (Legacy OpenAI error format)
    */
   toJSON() {
     return {
