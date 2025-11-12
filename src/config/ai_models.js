@@ -9,6 +9,54 @@ export const AI_MODELS = {
     // ========================================
     // Claude 시리즈
     // ========================================
+    'claude-sonnet-4-5-20250929': {
+        provider: 'claude',
+        name: 'Claude Sonnet 4.5',
+        contextWindow: 200000,
+        maxTokens: 64000,
+        supportsReasoning: true,
+    },
+    'claude-haiku-4-5-20251001': {
+        provider: 'claude',
+        name: 'Claude Haiku 4.5',
+        contextWindow: 200000,
+        maxTokens: 64000,
+        supportsReasoning: true,
+    },
+    'claude-opus-4-1-20250805': {
+        provider: 'claude',
+        name: 'Claude Opus 4.1',
+        contextWindow: 200000,
+        maxTokens: 32000,
+        supportsReasoning: true,
+    },
+    'claude-sonnet-4-20250514': {
+        provider: 'claude',
+        name: 'Claude Sonnet 4',
+        contextWindow: 200000,
+        maxTokens: 64000,
+        supportsReasoning: true,
+    },
+    'claude-3-7-sonnet-20250219': {
+        provider: 'claude',
+        name: 'Claude Sonnet 3.7',
+        contextWindow: 200000,
+        maxTokens: 64000,
+        supportsReasoning: true,
+    },
+    'claude-opus-4-20250514': {
+        provider: 'claude',
+        name: 'Claude Opus 4',
+        contextWindow: 200000,
+        maxTokens: 32000,
+        supportsReasoning: true,
+    },
+    'claude-3-5-haiku-20241022': {
+        provider: 'claude',
+        name: 'Claude Haiku 3.5',
+        contextWindow: 200000,
+        maxTokens: 8000,
+    },
     'claude-3-haiku-20240307': {
         provider: 'claude',
         name: 'Claude Haiku 3',
@@ -19,13 +67,13 @@ export const AI_MODELS = {
     // ========================================
     // Google Gemini 시리즈
     // ========================================
-    'gemini-2.5-flash': {
-        provider: 'gemini',
-        name: 'Gemini 2.5 Flash',
-        contextWindow: 1048576, // 1M tokens
-        maxTokens: 65536, // 64K tokens
-        supportsReasoning: true,
-    },
+    // 'gemini-2.5-flash': {
+    //     provider: 'gemini',
+    //     name: 'Gemini 2.5 Flash',
+    //     contextWindow: 1048576, // 1M tokens
+    //     maxTokens: 65536, // 64K tokens
+    //     supportsReasoning: true,
+    // },
 
     // ========================================
     // OpenAI GPT-5 시리즈
