@@ -301,7 +301,7 @@ if (!process.env.API_KEY) {
     console.log('  1. Obtain an API key from your provider (OpenAI, Google, Anthropic):');
     console.log(chalk.cyan('     OpenAI: https://platform.openai.com/account/api-keys'));
     console.log(chalk.cyan('     Google: https://makersuite.google.com/app/apikey'));
-    console.log(chalk.cyan('     Anthropic: https://console.anthropic.com/'));
+    console.log(chalk.cyan('     Anthropic: https://console.anthropic.com/settings/keys'));
     console.log(`  2. Add the API key to your settings file:`);
     console.log(chalk.cyan(`     ${SETTINGS_FILE}`));
     console.log('  3. Or run the setup wizard again by deleting the settings file');

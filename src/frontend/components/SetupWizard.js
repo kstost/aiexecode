@@ -145,7 +145,7 @@ export function SetupWizard({ onComplete, onCancel }) {
             case STEPS.API_KEY:
                 return React.createElement(Box, { flexDirection: 'column' },
                     React.createElement(Text, { bold: true, color: theme.text.accent }, '1. API Key:'),
-                    React.createElement(Text, { color: theme.text.secondary }, '   Get your API key from: https://platform.openai.com/account/api-keys'),
+                    React.createElement(Text, { color: theme.text.secondary }, '   Get your API key from: https://platform.openai.com/account/api-keys or https://console.anthropic.com/settings/keys'),
                     React.createElement(Text, null),
                     React.createElement(Box, {
                         borderStyle: 'round',

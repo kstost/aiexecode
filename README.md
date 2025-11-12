@@ -84,6 +84,7 @@ On first run, the setup wizard appears:
 
 **Where to get API keys:**
 - OpenAI: https://platform.openai.com/account/api-keys
+- Anthropic: https://console.anthropic.com/settings/keys
 
 ### Step 2: Using It
 
