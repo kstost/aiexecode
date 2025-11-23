@@ -114,11 +114,11 @@ export function colorizeCode(code, language, showLineNumbers = true) {
         const lines = codeToHighlight.split('\n');
         const padWidth = String(lines.length).length;
 
-        return React.createElement(Box, { flexDirection: 'column' },
+        return React.createElement(Box, { flexDirection: 'column', width: '100%' },
             lines.map((line, index) => {
                 const contentToRender = highlightLine(line, language);
 
-                return React.createElement(Box, { key: index },
+                return React.createElement(Box, { key: index, width: '100%' },
                     showLineNumbers && React.createElement(Text, { color: 'gray' },
                         `${String(index + 1).padStart(padWidth, ' ')} `
                     ),
@@ -135,9 +135,9 @@ export function colorizeCode(code, language, showLineNumbers = true) {
         const lines = codeToHighlight.split('\n');
         const padWidth = String(lines.length).length;
 
-        return React.createElement(Box, { flexDirection: 'column' },
+        return React.createElement(Box, { flexDirection: 'column', width: '100%' },
             lines.map((line, index) =>
-                React.createElement(Box, { key: index },
+                React.createElement(Box, { key: index, width: '100%' },
                     showLineNumbers && React.createElement(Text, { color: 'gray' },
                         `${String(index + 1).padStart(padWidth, ' ')} `
                     ),

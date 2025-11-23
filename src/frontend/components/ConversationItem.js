@@ -126,7 +126,7 @@ function CodeExecutionDisplay({ item, hasFollowingResult, nextItem, isPending })
     const iconColor = isPending ? theme.text.secondary : config.color;
 
     if (isDenied) {
-        return React.createElement(Box, { flexDirection: "column", marginBottom, marginLeft: 2 },
+        return React.createElement(Box, { flexDirection: "column", marginBottom, marginLeft: 2, width: '100%' },
             React.createElement(Box, { flexDirection: "row", marginBottom: 0 },
                 React.createElement(Text, { color: iconColor, bold: true }, showIcon ? config.icon : '  '),
                 React.createElement(Text, { color: theme.text.primary }, 'Executing '),
@@ -138,14 +138,14 @@ function CodeExecutionDisplay({ item, hasFollowingResult, nextItem, isPending })
         );
     }
 
-    return React.createElement(Box, { flexDirection: "column", marginBottom, marginLeft: 2 },
+    return React.createElement(Box, { flexDirection: "column", marginBottom, marginLeft: 2, width: '100%' },
         React.createElement(Box, { flexDirection: "row", marginBottom: 0 },
             React.createElement(Text, { color: iconColor, bold: true }, showIcon ? config.icon : '  '),
             React.createElement(Text, { color: theme.text.primary }, 'Executing '),
             React.createElement(Text, { color: theme.status.warning, bold: true }, languageName),
             // React.createElement(Text, { color: theme.text.primary }, ' code:')
         ),
-        React.createElement(Box, { marginLeft: 2 },
+        React.createElement(Box, { marginLeft: 2, flexGrow: 1 },
             colorizeCode(item.code, item.language, true)
         )
     );
@@ -174,15 +174,16 @@ function CodeResultDisplay({ item }) {
             borderStyle: "round",
             borderColor: theme.border.default,
             paddingX: 1,
-            flexGrow: 1
+            flexGrow: 1,
+            width: '100%'
         },
-            hasStdout && React.createElement(Box, { marginBottom: 0 },
+            hasStdout && React.createElement(Box, { marginBottom: 0, width: '100%' },
                 React.createElement(Text, { color: theme.text.primary }, item.stdout)
             ),
-            hasStderr && React.createElement(Box, { marginBottom: 0 },
+            hasStderr && React.createElement(Box, { marginBottom: 0, width: '100%' },
                 React.createElement(Text, { color: theme.status.error }, item.stderr)
             ),
-            !hasStdout && !hasStderr && React.createElement(Box, { marginBottom: 0 },
+            !hasStdout && !hasStderr && React.createElement(Box, { marginBottom: 0, width: '100%' },
                 React.createElement(Text, { color: theme.text.secondary, dimColor: true }, '(no output)')
             )
         )
@@ -552,7 +553,7 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
 
     // 중간 안내 메시지 (assistant_progress) - dimColor로 표시
     if (type === 'assistant_progress') {
-        return React.createElement(Box, { flexDirection: "row", marginBottom, marginTop, marginLeft: 2 },
+        return React.createElement(Box, { flexDirection: "row", marginBottom, marginTop, marginLeft: 2, width: '100%' },
             React.createElement(Text, {
                 color: theme.text.secondary,
                 dimColor: true
@@ -565,7 +566,7 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
 
     // 시스템 메시지는 마크다운 렌더링 적용
     if (type === 'system') {
-        return React.createElement(Box, { flexDirection: "row", marginBottom, marginTop, marginLeft: 2 },
+        return React.createElement(Box, { flexDirection: "row", marginBottom, marginTop, marginLeft: 2, width: '100%' },
             React.createElement(Text, {
                 color: config.color,
                 bold: config.bold
@@ -578,7 +579,7 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
 
     // 에러 메시지는 빨간색으로 강조하고 마크다운 없이 표시
     if (type === 'error') {
-        return React.createElement(Box, { flexDirection: "row", marginBottom, marginTop, marginLeft: 2 },
+        return React.createElement(Box, { flexDirection: "row", marginBottom, marginTop, marginLeft: 2, width: '100%' },
             React.createElement(Text, {
                 color: config.color,
                 bold: config.bold
@@ -634,8 +635,8 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
             // Check if the tool was denied by user
             if (diffData.isDenied) {
                 const displayName = getToolDisplayName(toolName);
-                
-                return React.createElement(Box, { flexDirection: "column", marginBottom, marginTop, marginLeft: 2 },
+
+                return React.createElement(Box, { flexDirection: "column", marginBottom, marginTop, marginLeft: 2, width: '100%' },
                     React.createElement(Box, { flexDirection: "row" },
                         React.createElement(Text, { color: config.color, bold: config.bold }, config.icon),
                         React.createElement(Text, { color: 'white', bold: true }, displayName)
@@ -645,12 +646,12 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
                     )
                 );
             }
-            
+
             // fallback: 기본 tool 표시 (실패했지만 deny는 아닌 경우)
             const displayName = getToolDisplayName(toolName);
             const formattedArgs = formatToolCall(toolName, effectiveArgs || {});
 
-            return React.createElement(Box, { flexDirection: "row", marginBottom, marginTop, marginLeft: 2 },
+            return React.createElement(Box, { flexDirection: "row", marginBottom, marginTop, marginLeft: 2, width: '100%' },
                 React.createElement(Text, { color: config.color, bold: config.bold }, config.icon),
                 React.createElement(Text, { color: 'white', bold: true }, displayName),
                 React.createElement(Text, { color: theme.text.secondary }, ` ${formattedArgs}`)
@@ -660,7 +661,7 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
             const displayName = getToolDisplayName(toolName);
             const formattedArgs = formatToolCall(toolName, effectiveArgs || {});
 
-            return React.createElement(Box, { flexDirection: "row", marginBottom, marginTop, marginLeft: 2 },
+            return React.createElement(Box, { flexDirection: "row", marginBottom, marginTop, marginLeft: 2, width: '100%' },
                 React.createElement(Text, { color: config.color, bold: config.bold }, config.icon),
                 React.createElement(Text, { color: 'white', bold: true }, displayName),
                 React.createElement(Text, { color: theme.text.secondary }, ` ${formattedArgs}`)
@@ -709,13 +710,13 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
             return result;
         } else if (diffData?.loaded && !diffData.hasContent) {
             debugLog('Rendering FALLBACK (no content) for edit_file_replace');
-            
+
             // Check if the tool was denied by user
             if (diffData.isDenied) {
                 debugLog('Tool was DENIED by user');
                 const displayName = getToolDisplayName(toolName);
-                
-                return React.createElement(Box, { flexDirection: "column", marginBottom, marginTop, marginLeft: 2 },
+
+                return React.createElement(Box, { flexDirection: "column", marginBottom, marginTop, marginLeft: 2, width: '100%' },
                     React.createElement(Box, { flexDirection: "row" },
                         React.createElement(Text, { color: config.color, bold: config.bold }, config.icon),
                         React.createElement(Text, { color: 'white', bold: true }, displayName)
@@ -725,12 +726,12 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
                     )
                 );
             }
-            
+
             // fallback: 기본 tool 표시 (실패했지만 deny는 아닌 경우)
             const displayName = getToolDisplayName(toolName);
             const formattedArgs = formatToolCall(toolName, effectiveArgs || {});
 
-            return React.createElement(Box, { flexDirection: "row", marginBottom, marginTop, marginLeft: 2 },
+            return React.createElement(Box, { flexDirection: "row", marginBottom, marginTop, marginLeft: 2, width: '100%' },
                 React.createElement(Text, { color: config.color, bold: config.bold }, config.icon),
                 React.createElement(Text, { color: 'white', bold: true }, displayName),
                 React.createElement(Text, { color: theme.text.secondary }, ` ${formattedArgs}`)
@@ -741,7 +742,7 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
             const displayName = getToolDisplayName(toolName);
             const formattedArgs = formatToolCall(toolName, effectiveArgs || {});
 
-            return React.createElement(Box, { flexDirection: "row", marginBottom, marginTop, marginLeft: 2 },
+            return React.createElement(Box, { flexDirection: "row", marginBottom, marginTop, marginLeft: 2, width: '100%' },
                 React.createElement(Text, { color: config.color, bold: config.bold }, config.icon),
                 React.createElement(Text, { color: 'white', bold: true }, displayName),
                 React.createElement(Text, { color: theme.text.secondary }, ` ${formattedArgs}`)
@@ -764,7 +765,7 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
         const displayIcon = showIcon ? config.icon : '  ';
 
         if (isDenied) {
-            return React.createElement(Box, { flexDirection: "column", marginBottom, marginTop, marginLeft: 2 },
+            return React.createElement(Box, { flexDirection: "column", marginBottom, marginTop, marginLeft: 2, width: '100%' },
                 React.createElement(Box, { flexDirection: "row" },
                     React.createElement(Text, { color: iconColor, bold: config.bold }, displayIcon),
                     React.createElement(Text, { color: 'white', bold: true }, displayName)
@@ -775,7 +776,7 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
             );
         }
 
-        return React.createElement(Box, { flexDirection: "column", marginBottom, marginTop, marginLeft: 2 },
+        return React.createElement(Box, { flexDirection: "column", marginBottom, marginTop, marginLeft: 2, width: '100%' },
             React.createElement(Box, { flexDirection: "row" },
                 React.createElement(Text, { color: iconColor, bold: config.bold }, displayIcon),
                 React.createElement(Text, {
@@ -836,7 +837,7 @@ function StandardDisplay({ item, isPending, hasFollowingResult, nextItem, isLast
         }, text);
     }
 
-    return React.createElement(Box, { flexDirection: "column", marginBottom, marginTop, marginLeft: 2 },
+    return React.createElement(Box, { flexDirection: "column", marginBottom, marginTop, marginLeft: 2, width: '100%' },
         React.createElement(Box, { flexDirection: "row" },
             React.createElement(Text, { color: config.color, bold: config.bold }, config.icon),
             React.createElement(Box, { flexDirection: "column", flexGrow: 1 },

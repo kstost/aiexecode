@@ -1022,14 +1022,15 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
         );
     }
 
-    return React.createElement(Box, { flexDirection: "column", padding: 0 },
+    return React.createElement(Box, { flexDirection: "column", padding: 0, width: '100%' },
         // History area (grows to fill available space, shrinks when needed)
         React.createElement(Box, {
             flexDirection: "column",
             flexGrow: 1,
             flexShrink: 1,
             overflow: 'hidden',  // Prevent history from pushing out fixed elements
-            gap: 0  // No gap between children
+            gap: 0,  // No gap between children
+            width: '100%'  // Ensure full terminal width
         },
             // React.createElement(BlankLine, {
             //     reason: 'separator between static and dynamic',
@@ -1040,9 +1041,7 @@ export function App({ onSubmit, onClearScreen, onExit, commands = [], model, ver
 
             // ===== Static 영역 시작 =====
             // Static items: Header와 히스토리 포함
-            React.createElement(Box, { marginBottom: 0, paddingBottom: 0 },
-                React.createElement(Static, { items: staticItems }, (item) => item)
-            ),
+            React.createElement(Static, { items: staticItems }, (item) => item),
             // ===== Static 영역 끝 =====
 
             // Static과 Dynamic 사이 구분선
